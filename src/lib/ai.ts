@@ -427,3 +427,163 @@ ${traitsStr}
 
   return callAI(messages, false);
 }
+
+// ==================== 视频生成 ====================
+
+const VIDEO_API_BASE = "https://apihub.agnes-ai.com/v1";
+const VIDEO_MODEL = "agnes-video-v2.0";
+
+interface VideoTaskResult {
+  taskId: string;
+  status: "queued" | "in_progress" | "completed" | "failed";
+  videoUrl?: string;
+  error?: string;
+}
+
+/**
+ * 创建视频生成任务
+ */
+export async function createVideoTask(
+  prompt: string,
+  options: {
+    imageUrl?: string;
+    numFrames?: number;
+    frameRate?: number;
+    width?: number;
+    height?: number;
+  } = {}
+): Promise<VideoTaskResult> {
+  if (!AI_API_KEY) {
+    throw new Error("需要配置 AI_API_KEY 才能生成视频");
+  }
+
+  const { imageUrl, numFrames = 121, frameRate = 24, width = 1152, height = 768 } = options;
+
+  const body: Record<string, any> = {
+    model: VIDEO_MODEL,
+    prompt,
+    num_frames: numFrames,
+    frame_rate: frameRate,
+    width,
+    height,
+  };
+
+  // 如果有参考图片
+  if (imageUrl) {
+    body.image = imageUrl;
+  }
+
+  const response = await fetch(`${VIDEO_API_BASE}/videos`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${AI_API_KEY}`,
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const errText = await response.text().catch(() => "");
+    throw new Error(`Video API error: ${response.status} ${errText}`);
+  }
+
+  const data = await response.json();
+  return {
+    taskId: data.task_id || data.id,
+    status: "queued",
+  };
+}
+
+/**
+ * 轮询视频生成状态
+ */
+export async function pollVideoTask(taskId: string): Promise<VideoTaskResult> {
+  if (!AI_API_KEY) {
+    throw new Error("需要配置 AI_API_KEY");
+  }
+
+  const response = await fetch(`${VIDEO_API_BASE}/videos/${taskId}`, {
+    headers: {
+      Authorization: `Bearer ${AI_API_KEY}`,
+    },
+  });
+
+  if (!response.ok) {
+    // 尝试用推荐的查询方式
+    const altResponse = await fetch(
+      `https://apihub.agnes-ai.com/agnesapi?video_id=${taskId}`,
+      {
+        headers: { Authorization: `Bearer ${AI_API_KEY}` },
+      }
+    );
+    if (altResponse.ok) {
+      const altData = await altResponse.json();
+      return {
+        taskId,
+        status: altData.status || "in_progress",
+        videoUrl: altData.video_url || altData.url || altData.data?.url,
+        error: altData.error,
+      };
+    }
+    const errText = await response.text().catch(() => "");
+    throw new Error(`Poll video error: ${response.status} ${errText}`);
+  }
+
+  const data = await response.json();
+  return {
+    taskId,
+    status: data.status || "in_progress",
+    videoUrl: data.video_url || data.url || data.data?.url,
+    error: data.error,
+  };
+}
+
+/**
+ * 等待视频生成完成（带轮询）
+ */
+export async function waitForVideo(taskId: string, maxWaitMs = 300000): Promise<string> {
+  const start = Date.now();
+  let lastStatus = "";
+
+  while (Date.now() - start < maxWaitMs) {
+    const result = await pollVideoTask(taskId);
+
+    if (result.status === "completed" && result.videoUrl) {
+      return result.videoUrl;
+    }
+
+    if (result.status === "failed") {
+      throw new Error(`视频生成失败: ${result.error || "未知错误"}`);
+    }
+
+    if (result.status !== lastStatus) {
+      console.log(`Video task ${taskId}: ${result.status}`);
+      lastStatus = result.status;
+    }
+
+    // 轮询间隔：前30秒每2秒，之后每5秒
+    const elapsed = Date.now() - start;
+    await new Promise((r) => setTimeout(r, elapsed < 30000 ? 2000 : 5000));
+  }
+
+  throw new Error("视频生成超时");
+}
+
+/**
+ * 计算视频时长对应的帧数
+ */
+export function durationToFrames(seconds: number, frameRate = 24): number {
+  // num_frames 必须满足 8n + 1，且 ≤ 441
+  const raw = Math.round(seconds * frameRate);
+  // 找到最接近的 8n+1 值
+  let n = Math.round((raw - 1) / 8);
+  n = Math.max(1, Math.min(n, 55)); // max 441 frames = 8*55+1
+  return 8 * n + 1;
+}
+
+/**
+ * 计算单段最大时长
+ */
+export function maxSegmentDuration(frameRate = 24): number {
+  return Math.floor((8 * 55 + 1) / frameRate); // ≈ 18.4s @ 24fps
+}

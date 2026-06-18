@@ -213,6 +213,9 @@ export default function CharacterDetailPage() {
               <button onClick={() => router.push(`/simulate/${character.id}`)} className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#6c63ff] to-[#8b85ff] text-white text-sm font-medium hover:shadow-md transition-all">
                 🧠 心理模拟
               </button>
+              <button onClick={() => router.push(`/video?characterId=${character.id}`)} className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#ff6b6b] to-[#ffa94d] text-white text-sm font-medium hover:shadow-md transition-all">
+                🎬 生成视频
+              </button>
             </div>
           </div>
 
