@@ -17,6 +17,15 @@ model User {
   createdAt    DateTime  @default(now()) @map("created_at")
   lastLoginAt  DateTime? @map("last_login_at")
 
+  // 自我分析模块
+  selfAvatarUrl          String?  @map("self_avatar_url")
+  selfDiary              String?  @map("self_diary")            // JSON — 日记条目数组
+  selfTraits             String?  @map("self_traits")           // JSON — 九维评分
+  selfPersonalitySummary String?  @map("self_personality_summary")
+  selfBehaviorPatterns   String?  @map("self_behavior_patterns") // JSON
+  selfValues             String?  @map("self_values")            // JSON
+  selfAnalysisComplete   Boolean  @default(false) @map("self_analysis_complete")
+
   characters        Character[]
   simulationSessions SimulationSession[]
   feedbacks         UserFeedback[]

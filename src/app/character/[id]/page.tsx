@@ -161,7 +161,7 @@ export default function CharacterDetailPage() {
 
   const traits = character.traits || [];
   const contradictions = detectContradictions(traits);
-  const modeLabels: Record<string, string> = { analysis: "🎭 冷静分析", dialogue: "💬 对话模拟", preview: "🎬 情景预演" };
+  const modeLabels: Record<string, string> = { analysis: "🎭 冷静分析", preview: "🎬 情景预演" };
 
   return (
     <>
@@ -322,16 +322,20 @@ export default function CharacterDetailPage() {
           <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 mb-8">
             <h2 className="text-lg font-bold text-gray-800 mb-4">🧠 心理模拟</h2>
             <div className="flex gap-2 mb-4 flex-wrap">
-              {(["analysis", "dialogue", "preview"] as const).map((m) => (
+              {(["analysis", "preview"] as const).map((m) => (
                 <button key={m} onClick={() => setSimulateMode(m)}
                   className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${simulateMode === m ? "bg-[#6c63ff] text-white shadow-sm" : "bg-gray-50 text-gray-600 hover:bg-gray-100 border border-gray-100"}`}>
                   {modeLabels[m]}
                 </button>
               ))}
+              <button onClick={() => router.push(`/simulate/${character.id}`)}
+                className="px-4 py-2 rounded-xl text-sm font-medium transition-all bg-gradient-to-r from-[#6c63ff] to-[#8b85ff] text-white shadow-sm hover:shadow-md">
+                💬 对话模拟
+              </button>
             </div>
             <div className="flex gap-2 mb-6">
               <input type="text" value={userAction} onChange={(e) => setUserAction(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleSimulate()}
-                placeholder={simulateMode === "analysis" ? "输入你想分析的行为或场景..." : simulateMode === "dialogue" ? "输入你想对TA说的话..." : "输入你的台词或行为..."}
+                placeholder={simulateMode === "analysis" ? "输入你想分析的行为或场景..." : "输入你的台词或行为..."}
                 className="flex-1 px-4 py-3 rounded-xl border border-gray-200 focus:border-[#6c63ff] focus:ring-2 focus:ring-[#6c63ff]/20 outline-none transition-all" />
               <button onClick={handleSimulate} disabled={simulating || !userAction.trim()}
                 className="px-6 py-3 rounded-xl bg-gradient-to-r from-[#6c63ff] to-[#8b85ff] text-white font-medium hover:shadow-md transition-all disabled:opacity-50">

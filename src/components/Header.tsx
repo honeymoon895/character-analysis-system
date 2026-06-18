@@ -57,6 +57,13 @@ export function Header() {
                     >
                       👤 个人中心
                     </Link>
+                    <Link
+                      href="/my-profile"
+                      className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                      onClick={() => setShowMenu(false)}
+                    >
+                      🧠 自我认知
+                    </Link>
                     <button
                       onClick={handleLogout}
                       className="w-full text-left px-4 py-2 text-sm text-red-500 hover:bg-red-50"

@@ -267,6 +267,51 @@ ${traitsStr}
   return callAI(messages, false);
 }
 
+export async function analyzeSelfDiary(
+  content: string,
+  previousEntries: Array<{ content: string; timestamp: string }>,
+  existingTraits: any
+): Promise<string> {
+  const historyText = previousEntries
+    .map((e, i) => `[第${i + 1}条] ${e.content}`)
+    .join("\n");
+
+  const existingTraitsText = existingTraits
+    ? `已有分析结果：${JSON.stringify(existingTraits)}`
+    : "暂无分析结果";
+
+  const prompt = `你是一个专业的心理学人格分析师。用户正在通过日记/自我描述的方式让 AI 了解自己。
+
+已有日记记录：
+${historyText || "暂无"}
+
+${existingTraitsText}
+
+用户新的输入：
+${content}
+
+请基于全部信息（历史记录+新输入）分析该用户的性格特征。
+
+请以JSON格式输出：
+1. dimensions：九维心理特征评分（每个维度包含 code, name, score(0-100), confidence(0-100)）
+   九维度：OPENNESS（开放性）, CONSCIENTIOUSNESS（尽责性）, EXTRAVERSION（外向性）
+           AGREEABLENESS（宜人性）, NEUROTICISM（情绪稳定性）
+           DECISIVENESS（决断力）, RISK_TENDENCY（风险偏好）
+           EMPATHY（共情能力）, LEADERSHIP（领导力）
+2. summary：一句话性格总结
+3. behaviorPatterns：行为模式数组 [{scenario, description}]
+4. values：核心价值观数组
+
+注意：score 应该是 0-100 的整数，所有维度都必须包含。`;
+
+  const messages: Message[] = [
+    { role: "system", content: "你是一个专业的心理学人格分析师。请始终以JSON格式输出。" },
+    { role: "user", content: prompt },
+  ];
+
+  return callAI(messages, false);
+}
+
 // ==================== 人物画像生成 ====================
 
 const IMAGE_API_URL = process.env.AI_API_URL

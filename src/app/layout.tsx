@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { SelfPromptModal } from "@/components/SelfPromptModal";
 
 export const metadata: Metadata = {
   title: "角色人物多维分析系统",
@@ -15,6 +16,7 @@ export default function RootLayout({
     <html lang="zh-CN" className="h-full antialiased">
       <body className="min-h-full flex flex-col bg-[#f8f9fc] text-[#1a1a2e]" style={{ fontFamily: 'system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif' }}>
         {children}
+        <SelfPromptModal />
       </body>
     </html>
   );
