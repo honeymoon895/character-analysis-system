@@ -28,6 +28,9 @@
 *.db
 *.db-journal
 
+# user uploads
+public/uploads/
+
 # debug
 npm-debug.log*
 yarn-debug.log*

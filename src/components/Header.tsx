@@ -34,8 +34,12 @@ export function Header() {
                 onClick={() => setShowMenu(!showMenu)}
                 className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-gray-50 transition-colors"
               >
-                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#6c63ff] to-[#8b85ff] flex items-center justify-center text-white text-sm font-medium">
-                  {user.username.charAt(0).toUpperCase()}
+                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#6c63ff] to-[#8b85ff] flex items-center justify-center text-white text-sm font-medium overflow-hidden">
+                  {user.avatar ? (
+                    <img src={user.avatar} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    user.username.charAt(0).toUpperCase()
+                  )}
                 </div>
                 <span className="text-sm font-medium text-gray-700 hidden sm:block">
                   {user.username}

@@ -62,7 +62,14 @@ export default function MyProfilePage() {
         body: formData,
       });
       const data = await res.json();
-      if (data.avatarUrl) setAvatarUrl(data.avatarUrl);
+      if (data.avatarUrl) {
+        setAvatarUrl(data.avatarUrl);
+        // 同步更新 auth store，让全站头像立即生效
+        if (data.user) {
+          const token = localStorage.getItem("token") || "";
+          useAuthStore.getState().setAuth(data.user, token);
+        }
+      }
     } catch (err: any) {
       alert("上传失败：" + err.message);
     }

@@ -1,12 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useAuthStore } from "@/store/auth";
 import { httpGet } from "@/lib/http";
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const { setAuth, token } = useAuthStore();
-  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const savedToken = localStorage.getItem("token");
@@ -18,21 +17,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
         })
         .catch(() => {
-          localStorage.removeItem("token");
-        })
-        .finally(() => setLoading(false));
-    } else {
-      setLoading(false);
+          // Token invalid/expired → 清除登录态
+          useAuthStore.getState().logout();
+        });
     }
   }, []);
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-[#6c63ff]" />
-      </div>
-    );
-  }
 
   return <>{children}</>;
 }

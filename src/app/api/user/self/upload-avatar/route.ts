@@ -33,13 +33,24 @@ export async function POST(request: NextRequest) {
 
     const avatarUrl = `/uploads/avatars/${filename}`;
 
-    // 更新数据库
+    // 同时更新 selfAvatarUrl 和 avatar（全局头像字段）
     await prisma.user.update({
       where: { id: user.userId },
-      data: { selfAvatarUrl: avatarUrl },
+      data: {
+        selfAvatarUrl: avatarUrl,
+        avatar: avatarUrl,
+      },
     });
 
-    return NextResponse.json({ success: true, avatarUrl });
+    return NextResponse.json({
+      success: true,
+      avatarUrl,
+      user: {
+        id: user.userId,
+        username: user.username,
+        avatar: avatarUrl,
+      },
+    });
   } catch (error) {
     if (error instanceof Error && error.message === "UNAUTHORIZED") {
       return NextResponse.json({ error: "请先登录" }, { status: 401 });

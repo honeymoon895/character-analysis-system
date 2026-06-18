@@ -49,6 +49,7 @@ export default function SimulationPage() {
   const [sending, setSending] = useState(false);
   const [sessionId, setSessionId] = useState<number | null>(null);
   const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
+  const { user } = useAuthStore();
 
   // 自动滚底
   useEffect(() => {
@@ -267,15 +268,25 @@ export default function SimulationPage() {
             {/* ── 消息列表 ── */}
             {messages.map((msg, i) => (
               <div key={i}>
-                {/* 用户消息 — 右气泡 */}
+                {/* 用户消息 — 右气泡带头像 */}
                 {msg.role === "user" && (
                   <div className="flex justify-end mb-2">
                     <div className="max-w-[75%] flex items-end gap-2 flex-row-reverse">
-                      <div className="bg-[#95ec69] text-gray-800 rounded-2xl rounded-tr-sm px-3.5 py-2.5 shadow-sm break-words">
-                        <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.content as string}</p>
+                      {/* 用户头像 */}
+                      <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#4a90d9] to-[#6cb4ee] flex items-center justify-center text-white text-xs font-bold flex-shrink-0 overflow-hidden">
+                        {user?.avatar ? (
+                          <img src={user.avatar} alt="" className="w-full h-full object-cover" />
+                        ) : (
+                          <span>我</span>
+                        )}
                       </div>
-                      <div className="text-[10px] text-gray-300 whitespace-nowrap self-end pb-1">
-                        {formatTime(msg.timestamp)}
+                      <div>
+                        <div className="bg-[#95ec69] text-gray-800 rounded-2xl rounded-tr-sm px-3.5 py-2.5 shadow-sm break-words">
+                          <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.content as string}</p>
+                        </div>
+                        <div className="text-[10px] text-gray-300 text-right mt-0.5 px-1">
+                          {formatTime(msg.timestamp)}
+                        </div>
                       </div>
                     </div>
                   </div>

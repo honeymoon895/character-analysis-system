@@ -39,8 +39,12 @@ export default function ProfilePage() {
 
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 mb-6">
             <div className="flex items-center gap-6 mb-8">
-              <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-[#6c63ff] to-[#8b85ff] flex items-center justify-center text-white text-3xl font-bold shadow-md">
-                {user.username.charAt(0).toUpperCase()}
+              <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-[#6c63ff] to-[#8b85ff] flex items-center justify-center text-white text-3xl font-bold shadow-md overflow-hidden">
+                {user.avatar ? (
+                  <img src={user.avatar} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  user.username.charAt(0).toUpperCase()
+                )}
               </div>
               <div>
                 <h2 className="text-xl font-bold text-gray-900">{user.username}</h2>
