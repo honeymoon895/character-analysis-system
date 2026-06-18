@@ -502,29 +502,33 @@ export async function pollVideoTask(taskId: string): Promise<VideoTaskResult> {
     throw new Error("需要配置 AI_API_KEY");
   }
 
+  // 优先使用推荐查询方式：https://apihub.agnes-ai.com/agnesapi?video_id=xxx
+  // 这个接口返回的字段名更准确
+  const altResponse = await fetch(
+    `https://apihub.agnes-ai.com/agnesapi?video_id=${taskId}`,
+    {
+      headers: { Authorization: `Bearer ${AI_API_KEY}` },
+    }
+  );
+
+  if (altResponse.ok) {
+    const altData = await altResponse.json();
+    // Agnes 返回的字段：status / progress / remixed_from_video_id / error
+    const status = mapVideoStatus(altData.status || altData.state);
+    return {
+      taskId,
+      status,
+      videoUrl: altData.remixed_from_video_id || altData.video_url || altData.url || altData.data?.url,
+      error: altData.error,
+    };
+  }
+
+  // 回退到旧接口
   const response = await fetch(`${VIDEO_API_BASE}/videos/${taskId}`, {
-    headers: {
-      Authorization: `Bearer ${AI_API_KEY}`,
-    },
+    headers: { Authorization: `Bearer ${AI_API_KEY}` },
   });
 
   if (!response.ok) {
-    // 尝试用推荐的查询方式
-    const altResponse = await fetch(
-      `https://apihub.agnes-ai.com/agnesapi?video_id=${taskId}`,
-      {
-        headers: { Authorization: `Bearer ${AI_API_KEY}` },
-      }
-    );
-    if (altResponse.ok) {
-      const altData = await altResponse.json();
-      return {
-        taskId,
-        status: altData.status || "in_progress",
-        videoUrl: altData.video_url || altData.url || altData.data?.url,
-        error: altData.error,
-      };
-    }
     const errText = await response.text().catch(() => "");
     throw new Error(`Poll video error: ${response.status} ${errText}`);
   }
@@ -532,10 +536,36 @@ export async function pollVideoTask(taskId: string): Promise<VideoTaskResult> {
   const data = await response.json();
   return {
     taskId,
-    status: data.status || "in_progress",
-    videoUrl: data.video_url || data.url || data.data?.url,
+    status: mapVideoStatus(data.status),
+    videoUrl: data.remixed_from_video_id || data.video_url || data.url || data.data?.url,
     error: data.error,
   };
+}
+
+/**
+ * 统一视频任务状态映射
+ */
+function mapVideoStatus(status: string): VideoTaskResult["status"] {
+  switch (status) {
+    case "queued":
+    case "queueing":
+      return "queued";
+    case "in_progress":
+    case "processing":
+    case "running":
+      return "in_progress";
+    case "completed":
+    case "done":
+    case "succeed":
+    case "success":
+      return "completed";
+    case "failed":
+    case "error":
+    case "failure":
+      return "failed";
+    default:
+      return "in_progress";
+  }
 }
 
 /**

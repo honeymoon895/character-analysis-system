@@ -51,6 +51,7 @@ function VideoGenerateContent() {
   // ── 生成状态 ──
   const [generating, setGenerating] = useState(false);
   const [progress, setProgress] = useState("");
+  const [progressDetail, setProgressDetail] = useState("");
   const [videoUrl, setVideoUrl] = useState("");
   const [stitched, setStitched] = useState(false);
   const [segments, setSegments] = useState(0);
@@ -396,6 +397,9 @@ function VideoGenerateContent() {
                 )}
                 <span className="text-sm text-gray-700">{progress}</span>
               </div>
+              {progressDetail && (
+                <p className="text-xs text-gray-400 mt-2">{progressDetail}</p>
+              )}
               {generating && (
                 <div className="mt-3 h-2 rounded-full bg-gray-100 overflow-hidden">
                   <div className="h-full rounded-full bg-gradient-to-r from-[#6c63ff] to-[#8b85ff] animate-pulse w-2/3" />
