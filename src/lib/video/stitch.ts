@@ -1,3 +1,15 @@
+/**
+ * ⚠️ 此文件在 Vercel 部署中已禁用。
+ *
+ * 原因：
+ *   - execSync('ffmpeg ...') — serverless 环境没有 FFmpeg
+ *   - 写入本地文件系统 — 不持久，多实例不共享
+ *
+ * 替代方案建议：
+ *   1. 使用第三方视频拼接服务（如 Shotstack, Mux）
+ *   2. 或使用 Vercel 边缘函数 + Cloudflare Stream
+ *   3. 或改为纯客户端拼接（WebCodecs API）
+ */
 import { execSync } from "child_process";
 import { mkdir, writeFile, readFile, unlink } from "fs/promises";
 import path from "path";
