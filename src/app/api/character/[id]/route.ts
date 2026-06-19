@@ -46,6 +46,7 @@ export async function GET(
         behaviorPatterns: safeJson(character.behaviorPatterns),
         values: safeJson(character.values),
         keyEvents: safeJson(character.keyEvents),
+        achievements: safeJson(character.achievements),
         confidenceScores: safeJson(character.confidenceScores),
         buildSession: character.buildSession
           ? {

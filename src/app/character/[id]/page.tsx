@@ -39,6 +39,11 @@ export default function CharacterDetailPage() {
   const [showFeedbackInput, setShowFeedbackInput] = useState(false);
   const [showPerspective, setShowPerspective] = useState(false);
 
+  // ── 持续更新：追加观察 ──
+  const [newObservation, setNewObservation] = useState("");
+  const [updatingObservation, setUpdatingObservation] = useState(false);
+  const [showObservationInput, setShowObservationInput] = useState(false);
+
   useEffect(() => {
     if (!isAuthenticated()) { router.push("/login"); return; }
     loadCharacter();
@@ -53,6 +58,38 @@ export default function CharacterDetailPage() {
       router.push("/");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handlePortraitChange = (url: string) => {
+    setCharacter((prev: any) => ({ ...prev, portraitUrl: url }));
+  };
+
+  // ── 追加观察 ──
+  const handleAddObservation = async () => {
+    if (!newObservation.trim()) return;
+    setUpdatingObservation(true);
+    try {
+      const res = await httpPost("/api/character/build", {
+        characterId: character.id,
+        name: character.name,
+        description: `追加观察：${newObservation}`,
+      });
+      // 更新页面数据
+      setCharacter((prev: any) => ({
+        ...prev,
+        traits: res.traits || prev.traits,
+        personalitySummary: res.summary || prev.personalitySummary,
+        behaviorPatterns: res.behaviorPatterns || prev.behaviorPatterns,
+        values: res.values || prev.values,
+        buildSession: res.buildSession || prev.buildSession,
+      }));
+      setNewObservation("");
+      setShowObservationInput(false);
+    } catch (err: any) {
+      alert("提交失败：" + err.message);
+    } finally {
+      setUpdatingObservation(false);
     }
   };
 
@@ -161,6 +198,7 @@ export default function CharacterDetailPage() {
 
   const traits = character.traits || [];
   const contradictions = detectContradictions(traits);
+  const analysisFailed = !traits.length || traits.every((t: any) => (t.score ?? 0) === 0);
   const modeLabels: Record<string, string> = { analysis: "🎭 冷静分析", preview: "🎬 情景预演" };
 
   return (
@@ -192,6 +230,7 @@ export default function CharacterDetailPage() {
                 characterId={character.id}
                 characterName={character.name}
                 existingPortraitUrl={character.portraitUrl}
+                onPortraitChange={handlePortraitChange}
               />
             </div>
 
@@ -201,6 +240,11 @@ export default function CharacterDetailPage() {
                 <span className="text-sm px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">
                   {character.source === "WEB" ? "🌐 网络采集" : "✍️ 用户构建"}
                 </span>
+                {character.source === "USER_BUILT" && character.basicInfo?.relationship && (
+                  <span className="text-sm px-2 py-0.5 rounded-full bg-[#6c63ff]/5 text-[#6c63ff] border border-[#6c63ff]/10">
+                    {character.basicInfo.relationship}
+                  </span>
+                )}
                 <span className="text-xs text-gray-400">
                   创建于 {new Date(character.createdAt).toLocaleDateString("zh-CN")}
                 </span>
@@ -222,6 +266,106 @@ export default function CharacterDetailPage() {
           {character.personalitySummary && (
             <div className="bg-white rounded-xl p-5 mb-6 shadow-sm border border-gray-100">
               <p className="text-gray-700 text-lg leading-relaxed">💡 {character.personalitySummary}</p>
+            </div>
+          )}
+
+          {/* ── 持续更新（USER_BUILT 专用） ── */}
+          {character.source === "USER_BUILT" && (
+            <div className="bg-white rounded-xl p-5 mb-6 shadow-sm border border-gray-100">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-bold text-gray-800">📝 持续完善档案</h3>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    你对TA有了新的认识？追加描述让档案更准确
+                    {character.buildSession && (
+                      <span className="ml-1 text-[#6c63ff]">
+                        （已完善 {character.buildSession.currentRound} 轮）
+                      </span>
+                    )}
+                  </p>
+                </div>
+                {!showObservationInput && (
+                  <button
+                    onClick={() => setShowObservationInput(true)}
+                    className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#6c63ff] to-[#8b85ff] text-white text-sm font-medium hover:shadow-md transition-all"
+                  >
+                    ✍️ 追加描述
+                  </button>
+                )}
+              </div>
+
+              {showObservationInput && (
+                <div className="mt-4 animate-fade-in-up">
+                  <textarea
+                    value={newObservation}
+                    onChange={(e) => setNewObservation(e.target.value)}
+                    placeholder="描述你对TA的新观察、新认识…&#10;例如：今天我发现在压力下TA其实会…"
+                    rows={3}
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-[#6c63ff] focus:ring-2 focus:ring-[#6c63ff]/20 outline-none transition-all resize-none"
+                  />
+                  <div className="flex gap-2 mt-3">
+                    <button
+                      onClick={handleAddObservation}
+                      disabled={updatingObservation || !newObservation.trim()}
+                      className="px-5 py-2 rounded-xl bg-gradient-to-r from-[#6c63ff] to-[#8b85ff] text-white text-sm font-medium hover:shadow-md transition-all disabled:opacity-50"
+                    >
+                      {updatingObservation ? "分析中..." : "提交并更新档案"}
+                    </button>
+                    <button
+                      onClick={() => { setShowObservationInput(false); setNewObservation(""); }}
+                      className="px-4 py-2 rounded-xl border border-gray-200 text-gray-500 text-sm hover:bg-gray-50 transition-all"
+                    >
+                      取消
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* 构建历史 */}
+              {character.buildSession?.records?.length > 0 && (
+                <div className="mt-4 pt-4 border-t border-gray-100">
+                  <button
+                    onClick={() => setShowObservationInput(!showObservationInput)}
+                    className="text-xs text-gray-400 hover:text-[#6c63ff] transition-colors"
+                  >
+                    查看构建历史（{character.buildSession.records.length} 轮）
+                  </button>
+                  <details className="mt-2">
+                    <summary className="text-xs text-gray-400 cursor-pointer hover:text-gray-600">展开查看</summary>
+                    <div className="mt-3 space-y-2">
+                      {character.buildSession.records.map((record: any, i: number) => (
+                        <div key={i} className="bg-gray-50 rounded-xl p-3 border border-gray-100">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-xs font-medium text-[#6c63ff]">第 {record.roundNumber} 轮</span>
+                            <span className="text-xs text-gray-400">
+                              {new Date(record.createdAt).toLocaleString("zh-CN")}
+                            </span>
+                          </div>
+                          <p className="text-sm text-gray-600 whitespace-pre-wrap">{record.userInput}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                </div>
+              )}
+            </div>
+          )}
+
+          {analysisFailed && (
+            <div className="bg-red-50 border-2 border-red-200 rounded-xl p-5 mb-6 animate-fade-in-up">
+              <div className="flex items-center gap-3 mb-2">
+                <span className="text-2xl">🚨</span>
+                <div>
+                  <span className="text-red-700 font-bold text-lg">分析失败</span>
+                  <p className="text-sm text-red-600 mt-0.5">该人物的性格分析暂未成功生成，可能是 AI 服务异常或数据不足导致的。</p>
+                </div>
+              </div>
+              <div className="flex gap-2 mt-3">
+                <button onClick={() => router.push("/")}
+                  className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700 transition-colors">
+                  ← 返回重试
+                </button>
+              </div>
             </div>
           )}
 
@@ -277,6 +421,58 @@ export default function CharacterDetailPage() {
             </div>
           </div>
 
+          {/* 🏆 主要成就 */}
+          {character.achievements && Array.isArray(character.achievements) && character.achievements.length > 0 && (
+            <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 mb-8 animate-fade-in-up">
+              <h2 className="text-lg font-bold text-gray-800 mb-4">🏆 主要成就</h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {(Array.isArray(character.achievements) ? character.achievements : []).map((a: any, i: number) => (
+                  <div key={i} className="rounded-xl p-4 border" style={{
+                    backgroundColor: [ "#fef2f2", "#eff6ff", "#f0fdf4", "#fefce8", "#f5f3ff", "#fff7ed" ][i % 6],
+                    borderColor: [ "#fecaca", "#bfdbfe", "#bbf7d0", "#fef08a", "#ddd6fe", "#fed7aa" ][i % 6],
+                  }}>
+                    <span className="inline-block px-2 py-0.5 rounded text-xs font-medium mb-2" style={{
+                      backgroundColor: [ "#fee2e2", "#dbeafe", "#dcfce7", "#fef9c3", "#ede9fe", "#ffedd5" ][i % 6],
+                      color: [ "#b91c1c", "#1d4ed8", "#15803d", "#a16207", "#6d28d9", "#c2410c" ][i % 6],
+                    }}>
+                      {a.domain || "综合"}
+                    </span>
+                    <h4 className="font-semibold text-gray-900 text-sm mb-1">{a.title}</h4>
+                    <p className="text-xs text-gray-600 leading-relaxed">{a.description}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* 📜 生平大事 */}
+          {character.keyEvents && Array.isArray(character.keyEvents) && character.keyEvents.length > 0 && (
+            <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 mb-8 animate-fade-in-up">
+              <h2 className="text-lg font-bold text-gray-800 mb-4">📜 生平大事</h2>
+              <div className="space-y-4">
+                {(Array.isArray(character.keyEvents) ? character.keyEvents : []).map((e: any, i: number) => (
+                  <div key={i} className="flex gap-4">
+                    <div className="flex flex-col items-center">
+                      <div className="w-3 h-3 rounded-full bg-[#6c63ff] flex-shrink-0 mt-1.5" />
+                      {i < (Array.isArray(character.keyEvents) ? character.keyEvents.length : 0) - 1 && (
+                        <div className="w-0.5 flex-1 bg-[#6c63ff]/20 min-h-[2rem]" />
+                      )}
+                    </div>
+                    <div className="flex-1 pb-4">
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-sm font-bold text-[#6c63ff]">{e.year}</span>
+                        <span className="text-sm font-semibold text-gray-800">{e.event}</span>
+                      </div>
+                      {e.significance && (
+                        <p className="text-xs text-gray-500 mt-1 leading-relaxed">{e.significance}</p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {showBurnout && burnoutData && (
             <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 mb-8 animate-fade-in-up">
               <h2 className="text-lg font-bold text-gray-800 mb-4">🧘 内耗缓解助手</h2>
@@ -326,7 +522,7 @@ export default function CharacterDetailPage() {
             <h2 className="text-lg font-bold text-gray-800 mb-4">🧠 心理模拟</h2>
             <div className="flex gap-2 mb-4 flex-wrap">
               {(["analysis", "preview"] as const).map((m) => (
-                <button key={m} onClick={() => setSimulateMode(m)}
+                <button key={m} onClick={() => m === "preview" ? router.push(`/video?characterId=${character.id}`) : setSimulateMode(m)}
                   className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${simulateMode === m ? "bg-[#6c63ff] text-white shadow-sm" : "bg-gray-50 text-gray-600 hover:bg-gray-100 border border-gray-100"}`}>
                   {modeLabels[m]}
                 </button>

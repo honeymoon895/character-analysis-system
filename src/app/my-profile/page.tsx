@@ -96,6 +96,28 @@ export default function MyProfilePage() {
     }
   };
 
+  // ── 导出数据 ──
+  const handleExport = async () => {
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch("/api/user/self/export", {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) throw new Error("导出失败");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `self-cognition-${user?.username || "user"}-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      alert("导出失败：" + err.message);
+    }
+  };
+
   // ── 重置 ──
   const handleReset = async () => {
     if (!confirm("确定清除所有自我分析数据吗？")) return;
@@ -165,6 +187,14 @@ export default function MyProfilePage() {
                     <span className="text-xs px-2 py-1 rounded-full bg-green-50 text-green-600 border border-green-100">
                       已完成
                     </span>
+                  )}
+                  {(traits.length > 0 || diaryEntries.length > 0) && (
+                    <button
+                      onClick={handleExport}
+                      className="text-xs px-2 py-1 rounded-full bg-amber-50 text-amber-600 border border-amber-100 hover:bg-amber-100 transition-colors"
+                    >
+                      📤 导出
+                    </button>
                   )}
                 </div>
               </div>
@@ -242,13 +272,21 @@ export default function MyProfilePage() {
               >
                 {saving ? "分析中..." : "✍️ 提交并分析"}
               </button>
-              {diaryEntries.length > 0 && (
-                <button
-                  onClick={handleReset}
-                  className="px-4 py-2.5 rounded-xl border border-red-200 text-red-400 text-sm hover:bg-red-50 transition-all"
-                >
-                  重置
-                </button>
+              {(diaryEntries.length > 0 || traits.length > 0) && (
+                <>
+                  <button
+                    onClick={handleExport}
+                    className="px-4 py-2.5 rounded-xl border border-amber-200 text-amber-500 text-sm hover:bg-amber-50 transition-all"
+                  >
+                    📤 导出
+                  </button>
+                  <button
+                    onClick={handleReset}
+                    className="px-4 py-2.5 rounded-xl border border-red-200 text-red-400 text-sm hover:bg-red-50 transition-all"
+                  >
+                    重置
+                  </button>
+                </>
               )}
             </div>
 

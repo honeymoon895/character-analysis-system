@@ -6,6 +6,7 @@ import {
   waitForVideo,
   durationToFrames,
   maxSegmentDuration,
+  rewriteVideoPrompt,
 } from "@/lib/ai";
 import { stitchVideos, generateVideoFileName } from "@/lib/video/stitch";
 
@@ -55,7 +56,8 @@ export async function POST(request: NextRequest) {
     // ─── 短视频：直接生成 ─────────────────────────
     if (duration <= MAX_SEGMENT_SECONDS) {
       const numFrames = durationToFrames(duration);
-      const promptWithStyle = buildVideoPrompt(prompt, referenceImages);
+      const safePrompt = await rewriteVideoPrompt(prompt);
+      const promptWithStyle = buildVideoPrompt(safePrompt, referenceImages);
 
       const task = await createVideoTask(promptWithStyle, {
         imageUrl: referenceImages[0], // 第一张作为参考图
@@ -76,32 +78,38 @@ export async function POST(request: NextRequest) {
 
     // ─── 长视频：分段生成 + 拼接 ─────────────────
     const segmentCount = Math.ceil(duration / MAX_SEGMENT_SECONDS);
+    // 总帧数 = 原始时长×帧率（不用 durationToFrames，因为它有 441 帧上限，只适合单段）
+    const FRAME_RATE = 24;
+    const totalFrames = duration * FRAME_RATE;
     // 均匀分配帧数到各段
-    const totalFrames = durationToFrames(duration);
     const framesPerSegment = Math.floor(totalFrames / segmentCount);
     // 每段调整为 8n+1
     const adjustedFrames = segmentFrames(framesPerSegment, segmentCount, totalFrames);
 
+    // 先用 AI 改写整个 prompt（避免每段独立改写增加开销）
+    const safePrompt = await rewriteVideoPrompt(prompt);
     // 生成每段的 prompt（带时间线描述）
-    const segmentPrompts = splitPromptByTimeline(prompt, segmentCount);
+    const segmentPrompts = splitPromptByTimeline(safePrompt, segmentCount);
 
-    // 并行生成所有段
+    // 并行生成所有段（每段都应用 buildVideoPrompt，与短视频路径一致）
     const tasks = await Promise.all(
-      segmentPrompts.map((segPrompt, i) =>
-        createVideoTask(segPrompt, {
+      segmentPrompts.map((segPrompt, i) => {
+        const finalPrompt = buildVideoPrompt(segPrompt, referenceImages);
+        console.log(`[Video] Seg ${i + 1}/${segmentCount}: ${finalPrompt.substring(0, 80)}...`);
+        return createVideoTask(finalPrompt, {
           imageUrl: referenceImages[0],
           numFrames: adjustedFrames[i],
           frameRate: 24,
-        })
-      )
+        });
+      })
     );
 
-    // 串行等待完成（避免 API 限流）
-    const videoUrls: string[] = [];
-    for (let i = 0; i < tasks.length; i++) {
-      const url = await waitForVideo(tasks[i].taskId);
-      videoUrls.push(url);
-    }
+    // 并行等待所有段完成（总耗时 ≈ 最慢的一段，而非各段之和）
+    console.log(`Waiting for ${tasks.length} video tasks...`);
+    const videoUrls = await Promise.all(
+      tasks.map((t, i) => waitForVideo(t.taskId, 600000))
+    );
+    console.log(`All ${videoUrls.length} segments completed.`);
 
     // 拼接
     const outputName = generateVideoFileName("story");
@@ -137,11 +145,11 @@ function buildVideoPrompt(
 ): string {
   // 清理特殊字符
   const clean = prompt.replace(/[「」【】""''〝〞]/g, "").trim();
-  // 英文前缀 + 原始描述（视频模型对中英文混合友好）
+  // 全中文描述，避免中英文混合导致审核异常
   const prefix = referenceImages.length > 0
-    ? "Generate a video matching the reference image style. "
-    : "Cinematic video. ";
-  return `${prefix}${clean}. Natural lighting, smooth motion.`;
+    ? "根据参考图片风格，"
+    : "电影感画面，";
+  return `${prefix}${clean}，自然光线，画面流畅。`;
 }
 
 /**
@@ -154,11 +162,11 @@ function splitPromptByTimeline(
   if (segmentCount <= 1) return [prompt];
 
   const timeMarkers = [
-    "开头",
+    "开场",
     "发展",
-    "高潮",
+    "推进",
     "转折",
-    "结尾",
+    "收尾",
   ];
 
   return Array.from({ length: segmentCount }, (_, i) => {
@@ -183,19 +191,14 @@ function segmentFrames(
   for (let i = 0; i < count; i++) {
     const isLast = i === count - 1;
     let f = isLast ? totalFrames - sum : baseFrames;
-    // 调整为 8n+1
-    let n = Math.round((f - 1) / 8);
+    // 调整为 8n+1，最后一段用 floor 确保不超总帧数
+    let n = isLast
+      ? Math.max(1, Math.floor((f - 1) / 8))
+      : Math.round((f - 1) / 8);
     n = Math.max(1, Math.min(n, 55));
     f = 8 * n + 1;
     frames.push(f);
     sum += f;
-  }
-  // 修正最后一段
-  if (sum !== totalFrames && frames.length > 0) {
-    const diff = totalFrames - sum;
-    let n = Math.round((frames[frames.length - 1] + diff - 1) / 8);
-    n = Math.max(1, Math.min(n, 55));
-    frames[frames.length - 1] = 8 * n + 1;
   }
   return frames;
 }

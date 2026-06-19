@@ -7,7 +7,7 @@ import { Header } from "@/components/Header";
 import { CharacterCard } from "@/components/CharacterCard";
 import { BuildCharacterModal } from "@/components/BuildCharacterModal";
 import { LoadingOverlay } from "@/components/LoadingOverlay";
-import { httpGet, httpPost } from "@/lib/http";
+import { httpGet, httpPost, httpDelete } from "@/lib/http";
 
 const SUGGESTIONS = ["曹操", "马云", "爱因斯坦", "李白", "Elon Musk", "诸葛亮"];
 
@@ -21,6 +21,10 @@ export default function HomePage() {
   const [characters, setCharacters] = useState<any[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [filteredSuggestions, setFilteredSuggestions] = useState(SUGGESTIONS);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filterSource, setFilterSource] = useState<"all" | "WEB" | "USER_BUILT">("all");
+  const [filterRelation, setFilterRelation] = useState("all");
+  const [sortBy, setSortBy] = useState<"newest" | "oldest" | "name" | "score">("newest");
 
   useEffect(() => {
     if (!isAuthenticated()) {
@@ -36,6 +40,62 @@ export default function HomePage() {
       setCharacters(res.characters || []);
     } catch {}
   };
+
+  const handleDeleteCharacter = async (id: number) => {
+    try {
+      await httpDelete(`/api/character/${id}`);
+      loadCharacters();
+    } catch (err: any) {
+      alert(err.message || "删除失败");
+    }
+  };
+
+  const allRelations = characters
+    .filter((c) => c.source === "USER_BUILT" && c.basicInfo)
+    .map((c) => {
+      try {
+        const info = typeof c.basicInfo === "string" ? JSON.parse(c.basicInfo) : c.basicInfo;
+        return info.relationship || "";
+      } catch { return ""; }
+    })
+    .filter(Boolean)
+    .filter((v, i, a) => a.indexOf(v) === i);
+
+  const filteredCharacters = characters
+    .filter((c) => {
+      if (filterSource !== "all" && c.source !== filterSource) return false;
+      if (filterSource === "USER_BUILT" && filterRelation !== "all" && c.basicInfo) {
+        try {
+          const info = typeof c.basicInfo === "string" ? JSON.parse(c.basicInfo) : c.basicInfo;
+          if (info.relationship !== filterRelation) return false;
+        } catch { return false; }
+      }
+      if (searchTerm.trim()) {
+        const term = searchTerm.toLowerCase();
+        return (
+          c.name.toLowerCase().includes(term) ||
+          (c.personalitySummary && c.personalitySummary.toLowerCase().includes(term))
+        );
+      }
+      return true;
+    })
+    .sort((a, b) => {
+      switch (sortBy) {
+        case "newest": return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        case "oldest": return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+        case "name": return a.name.localeCompare(b.name, "zh-CN");
+        case "score": {
+          const aAvg = a.traits?.length
+            ? (Array.isArray(a.traits) ? a.traits : JSON.parse(a.traits)).reduce((s: number, d: any) => s + (d.score ?? 0), 0) / a.traits.length
+            : 0;
+          const bAvg = b.traits?.length
+            ? (Array.isArray(b.traits) ? b.traits : JSON.parse(b.traits)).reduce((s: number, d: any) => s + (d.score ?? 0), 0) / b.traits.length
+            : 0;
+          return bAvg - aAvg;
+        }
+        default: return 0;
+      }
+    });
 
   const handleQueryChange = (value: string) => {
     setQuery(value);
@@ -218,13 +278,12 @@ export default function HomePage() {
           </div>
         </section>
 
-        {characters.length > 0 && (
-          <section className="pb-16">
+        {characters.length > 0 && (<section className="pb-16">
             <div className="page-container">
-              <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xl font-bold text-gray-900">
                   我的人物库
-                  <span className="text-sm font-normal text-gray-400 ml-2">({characters.length})</span>
+                  <span className="text-sm font-normal text-gray-400 ml-2">({filteredCharacters.length}/{characters.length})</span>
                 </h2>
                 <button
                   onClick={loadCharacters}
@@ -234,23 +293,85 @@ export default function HomePage() {
                 </button>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {characters.map((c) => (
-                  <CharacterCard
-                    key={c.id}
-                    id={c.id}
-                    name={c.name}
-                    source={c.source}
-                    personalitySummary={c.personalitySummary}
-                    traits={c.traits}
-                    portraitUrl={c.portraitUrl}
-                    createdAt={c.createdAt}
+              {/* 搜索 / 筛选 / 排序 */}
+              <div className="flex flex-wrap items-center gap-3 mb-5">
+                <div className="relative flex-1 min-w-[180px] max-w-xs">
+                  <input
+                    type="text"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    placeholder="🔍 搜索角色名称..."
+                    className="w-full px-4 py-2 rounded-xl border border-gray-200 focus:border-[#6c63ff] focus:ring-2 focus:ring-[#6c63ff]/20 outline-none transition-all text-sm"
                   />
-                ))}
+                </div>
+
+                <div className="flex gap-1.5">
+                  {(["all", "WEB", "USER_BUILT"] as const).map((f) => (
+                    <button
+                      key={f}
+                      onClick={() => { setFilterSource(f); if (f !== "USER_BUILT") setFilterRelation("all"); }}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                        filterSource === f
+                          ? "bg-[#6c63ff] text-white shadow-sm"
+                          : "bg-gray-50 text-gray-500 hover:bg-gray-100 border border-gray-100"
+                      }`}
+                    >
+                      {f === "all" ? "全部" : f === "WEB" ? "🌐 公众人物" : "✍️ 自定义"}
+                    </button>
+                  ))}
+                </div>
+
+                {filterSource === "USER_BUILT" && allRelations.length > 0 && (
+                  <select
+                    value={filterRelation}
+                    onChange={(e) => setFilterRelation(e.target.value)}
+                    className="px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-100 bg-gray-50 text-gray-500 hover:bg-gray-100 outline-none transition-all cursor-pointer"
+                  >
+                    <option value="all">全部关系</option>
+                    {allRelations.map((r) => (
+                      <option key={r} value={r}>{r}</option>
+                    ))}
+                  </select>
+                )}
+
+                <select
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value as any)}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-100 bg-gray-50 text-gray-500 hover:bg-gray-100 outline-none transition-all cursor-pointer"
+                >
+                  <option value="newest">🕐 最新</option>
+                  <option value="oldest">🕐 最早</option>
+                  <option value="name">📝 名称</option>
+                  <option value="score">⭐ 评分</option>
+                </select>
               </div>
+
+              {filteredCharacters.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {filteredCharacters.map((c) => (
+                    <CharacterCard
+                      key={c.id}
+                      id={c.id}
+                      name={c.name}
+                      source={c.source}
+                      personalitySummary={c.personalitySummary}
+                      traits={c.traits}
+                      portraitUrl={c.portraitUrl}
+                      createdAt={c.createdAt}
+                      basicInfo={c.basicInfo}
+                      onDelete={handleDeleteCharacter}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-16 bg-white rounded-xl border border-gray-100">
+                  <div className="text-4xl mb-3 opacity-30">🔍</div>
+                  <p className="text-gray-400 text-sm">没有匹配的人物</p>
+                  <p className="text-gray-300 text-xs mt-1">试试调整搜索条件或筛选</p>
+                </div>
+              )}
             </div>
-          </section>
-        )}
+          </section>)}
 
         {characters.length === 0 && !loading && (
           <section className="pb-16">

@@ -333,7 +333,7 @@ function VideoGenerateContent() {
                       }`}
                     >
                       {d < 60 ? `${d}秒` : `${Math.floor(d / 60)}分${d % 60}秒`}
-                      {d > 18 && <span className="block text-[10px] text-gray-400">需拼接</span>}
+                      {d > 18 && <span className="block text-[10px] text-gray-400">等待时间较长</span>}
                     </button>
                   ))}
                 </div>

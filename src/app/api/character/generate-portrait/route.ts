@@ -26,8 +26,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "无权操作" }, { status: 403 });
     }
 
-    // 如果已生成过且 portraitUrl 不为 DiceBear 兜底，直接返回
-    if (character.portraitUrl && !character.portraitUrl.includes("dicebear.com")) {
+    // 如果已生成过 AI 头像（非上传）且不是 DiceBear 兜底，直接返回避免重复调用
+    if (character.portraitUrl && !character.portraitUrl.includes("dicebear.com") && !character.portraitUrl.startsWith("/uploads/")) {
       return NextResponse.json({
         portraitUrl: character.portraitUrl,
         cached: true,

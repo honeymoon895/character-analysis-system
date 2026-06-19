@@ -44,6 +44,7 @@ model Character {
   behaviorPatterns   String?  @map("behavior_patterns")
   values             String?  // JSON
   keyEvents          String?  @map("key_events")
+  achievements       String?  // JSON - 主要成就按领域分类
   confidenceScores   String?  @map("confidence_scores")
   isPublic           Boolean  @default(false) @map("is_public")
   viewCount          Int      @default(0) @map("view_count")

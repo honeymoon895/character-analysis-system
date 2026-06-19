@@ -16,6 +16,7 @@ export async function GET(request: NextRequest) {
         traits: true,
         personalitySummary: true,
         portraitUrl: true,
+        basicInfo: true,
         createdAt: true,
         updatedAt: true,
         viewCount: true,

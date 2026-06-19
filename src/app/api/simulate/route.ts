@@ -59,12 +59,11 @@ export async function POST(request: NextRequest) {
 
     // ── 调用 AI ─────────────────────────────────────────────
     const traits = safeJson(character.traits);
+
     const aiResult = await simulateReaction(traits, userAction, mode as any);
 
-    let parsed;
-    try {
-      parsed = JSON.parse(aiResult);
-    } catch {
+    let parsed = tryExtractJson(aiResult);
+    if (!parsed) {
       parsed = {
         reactions: [{ probability: 50, description: "无法确定" }],
         psychologicalAnalysis: "分析中...",
@@ -175,4 +174,39 @@ function safeJson(str: string | null | undefined): any {
   } catch {
     return str;
   }
+}
+
+/**
+ * 从 AI 回复中提取 JSON，兼容 markdown 代码块包裹 / 前置说明文字等情况
+ */
+function tryExtractJson(text: string): any | null {
+  if (!text) return null;
+
+  // 1) 直接解析
+  try {
+    const direct = JSON.parse(text);
+    if (direct && typeof direct === "object") return direct;
+  } catch { /* 继续尝试 */ }
+
+  // 2) 去掉 markdown 代码块标记（```json ... ``` 或 ``` ... ```）
+  const codeBlock = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (codeBlock) {
+    try {
+      const parsed = JSON.parse(codeBlock[1].trim());
+      if (parsed && typeof parsed === "object") return parsed;
+    } catch { /* 继续尝试 */ }
+  }
+
+  // 3) 尝试提取最外层的 {…} 对象
+  const braceStart = text.indexOf("{");
+  const braceEnd = text.lastIndexOf("}");
+  if (braceStart !== -1 && braceEnd > braceStart) {
+    try {
+      const candidate = text.slice(braceStart, braceEnd + 1);
+      const parsed = JSON.parse(candidate);
+      if (parsed && typeof parsed === "object") return parsed;
+    } catch { /* 继续尝试 */ }
+  }
+
+  return null;
 }
