@@ -1,23 +1,61 @@
 import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/db";
+import { requireAuth } from "@/lib/api";
+import { writeFile, mkdir } from "fs/promises";
+import path from "path";
 
-/**
- * 头像上传功能在 Vercel 部署中暂时不可用。
- * 本地文件系统在 serverless 环境中不持久。
- *
- * TODO: 替换为 Vercel Blob 存储后可重新启用：
- *   1. npm install @vercel/blob
- *   2. 在 Vercel Dashboard 添加 BLOB_READ_WRITE_TOKEN 环境变量
- *   3. 使用 put() 替代 fs.writeFile()
- *
- * 参见: https://vercel.com/docs/storage/vercel-blob
- */
-export async function POST(_request: NextRequest) {
-  return NextResponse.json(
-    {
-      error: "头像上传功能在当前平台暂时不可用",
-      fallback: true,
-      message: "您可以通过其他方式更新头像，或等待后续版本。",
-    },
-    { status: 503 }
-  );
+export async function POST(request: NextRequest) {
+  try {
+    const user = requireAuth(request);
+
+    const formData = await request.formData();
+    const file = formData.get("avatar") as File | null;
+    if (!file) {
+      return NextResponse.json({ error: "请选择图片" }, { status: 400 });
+    }
+
+    // 只允许图片
+    if (!file.type.startsWith("image/")) {
+      return NextResponse.json({ error: "只支持图片文件" }, { status: 400 });
+    }
+
+    // 保存到 public/uploads/avatars/
+    const uploadDir = path.join(process.cwd(), "public", "uploads", "avatars");
+    await mkdir(uploadDir, { recursive: true });
+
+    const ext = file.name.split(".").pop() || "png";
+    const filename = `user-${user.userId}-${Date.now()}.${ext}`;
+    const filepath = path.join(uploadDir, filename);
+
+    const bytes = await file.arrayBuffer();
+    const buffer = Buffer.from(bytes);
+    await writeFile(filepath, buffer);
+
+    const avatarUrl = `/uploads/avatars/${filename}`;
+
+    // 同时更新 selfAvatarUrl 和 avatar（全局头像字段）
+    await prisma.user.update({
+      where: { id: user.userId },
+      data: {
+        selfAvatarUrl: avatarUrl,
+        avatar: avatarUrl,
+      },
+    });
+
+    return NextResponse.json({
+      success: true,
+      avatarUrl,
+      user: {
+        id: user.userId,
+        username: user.username,
+        avatar: avatarUrl,
+      },
+    });
+  } catch (error) {
+    if (error instanceof Error && error.message === "UNAUTHORIZED") {
+      return NextResponse.json({ error: "请先登录" }, { status: 401 });
+    }
+    console.error("Upload avatar error:", error);
+    return NextResponse.json({ error: "上传失败" }, { status: 500 });
+  }
 }

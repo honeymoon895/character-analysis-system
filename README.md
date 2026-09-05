@@ -54,7 +54,8 @@
 - **对话模拟**：以该人物口吻进行实时对话（微信风格聊天界面）
 - **冷静分析**：输入一个行为或场景，AI 分析该人物可能反应的概率分布、心理机制、真实意图与行动建议
 - **反事实模拟**：推演“如果当时没有……而是……，TA 会怎么想？”
-- **情景预演**：选择日常、冲突、温馨或自定义场景，进入视频化情景生成流程
+- **情景预演**：选择日常、冲突、温馨或自定义场景，模拟该人物在特定情景下的表现
+- **🎬 AI 情景视频生成**：根据人物、场景与对话，生成对应的情景短视频
 
 ### 🧘 内耗缓解 & 换位思考
 - 当你在人际关系中感到困惑或内耗时，提供性格归因提醒、行动建议
@@ -72,7 +73,7 @@
 - [Next.js 16](https://nextjs.org/)（App Router）
 - [React 19](https://react.dev/) + TypeScript
 - [Tailwind CSS 4](https://tailwindcss.com/)
-- [Prisma](https://www.prisma.io/)（数据库 ORM，默认 PostgreSQL）
+- [Prisma](https://www.prisma.io/)（数据库 ORM，默认 SQLite）
 - [Zustand](https://zustand-demo.pmnd.rs/)（前端状态管理）
 - [ECharts](https://echarts.apache.org/) / echarts-for-react（雷达图）
 - 兼容 OpenAI 格式的 AI API（默认支持 Agnes / DeepSeek / OpenAI）
@@ -85,7 +86,7 @@
 
 - Node.js 20+
 - npm
-- PostgreSQL 数据库（也可以自行将 `prisma/schema.prisma` 的 provider 改为 `sqlite` 做本地体验）
+- 无需额外安装数据库，项目默认使用 SQLite
 
 ### 2. 克隆并安装依赖
 
@@ -104,8 +105,8 @@ cp .env.example .env
 编辑 `.env`，至少配置：
 
 ```bash
-# PostgreSQL 连接串
-DATABASE_URL="postgresql://user:password@localhost:5432/character_analysis?schema=public"
+# SQLite 本地数据库
+DATABASE_URL="file:./dev.db"
 
 # 登录 JWT 密钥，生产环境请更换为随机字符串
 JWT_SECRET="please-change-me-to-a-long-random-secret"
@@ -147,21 +148,13 @@ npm run seed      # 初始化维度定义数据
 
 | 变量名 | 必填 | 说明 |
 |--------|------|------|
-| `DATABASE_URL` | ✅ | Prisma 数据库连接串（当前代码默认使用 PostgreSQL） |
+| `DATABASE_URL` | ✅ | Prisma SQLite 数据库路径，例如 `file:./dev.db` |
 | `JWT_SECRET` | ✅ | 登录态加密密钥，生产环境请使用长随机字符串 |
 | `AI_API_KEY` | 可选 | 兼容 OpenAI 格式的 AI API Key；不填则启用内置 mock 数据 |
 | `AI_API_URL` | 可选 | AI Chat 接口地址，默认 `https://apihub.agnes-ai.com/v1/chat/completions` |
 | `AI_MODEL` | 可选 | AI 对话模型，默认 `agnes-2.0-flash` |
 | `AI_IMAGE_MODEL` | 可选 | 画像生成模型，默认 `agnes-image-2.1-flash` |
 | `NEXT_PUBLIC_BASE_URL` | 可选 | 前端 API 请求基础地址，默认 `http://localhost:3000` |
-
----
-
-## ☁️ 部署
-
-- 国内部署推荐使用腾讯云 CloudBase，部署指南见 [DEPLOY.md](./DEPLOY.md)
-- 当前代码已适配 PostgreSQL 数据库
-- 云函数 / Serverless 环境下，本地文件上传和 AI 视频生成可能受到平台限制，详见 [DEPLOY.md](./DEPLOY.md) 中的“功能状态”
 
 ---
 
