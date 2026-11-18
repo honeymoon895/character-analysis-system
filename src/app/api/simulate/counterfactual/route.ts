@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireAuth } from "@/lib/api";
-import { counterfactualSimulation } from "@/lib/ai";
+import { runCounterfactual } from "@/lib/analysis/engine";
+import { emptyAnalysis, type AnalysisProfile } from "@/lib/analysis/types";
 
 export async function POST(request: NextRequest) {
   try {
@@ -20,23 +21,23 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "人物不存在" }, { status: 404 });
     }
 
-    const traits = safeJson(character.traits);
-    const aiResult = await counterfactualSimulation(traits, originalAction, alternativeAction);
+    const profile: AnalysisProfile =
+      safeJson(character.analysisProfile) || emptyAnalysis("该人物尚未完成人格研判");
 
-    let parsed;
-    try {
-      parsed = JSON.parse(aiResult);
-    } catch {
-      parsed = {
-        analysis: "基于人物性格特征分析，不同选择可能导致不同的结果。",
-        probability: 50,
-      };
+    const result = await runCounterfactual(
+      profile,
+      String(originalAction),
+      String(alternativeAction)
+    );
+
+    if (!result) {
+      return NextResponse.json(
+        { error: "推演失败，可能是 AI 服务未配置或响应异常" },
+        { status: 503 }
+      );
     }
 
-    return NextResponse.json({
-      analysis: parsed.analysis || "",
-      probability: parsed.probability || 50,
-    });
+    return NextResponse.json(result);
   } catch (error) {
     if (error instanceof Error && error.message === "UNAUTHORIZED") {
       return NextResponse.json({ error: "请先登录" }, { status: 401 });
@@ -51,6 +52,6 @@ function safeJson(str: string | null | undefined): any {
   try {
     return JSON.parse(str);
   } catch {
-    return str;
+    return null;
   }
 }

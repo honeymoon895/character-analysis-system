@@ -1,71 +1,74 @@
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
+/**
+ * HTTP 客户端
+ *
+ * 注意 baseURL 的处理方式：
+ * 旧版把默认值写死为 http://localhost:3000，在手机上通过局域网 IP 访问时，
+ * 所有请求都会打到手机自己的 localhost 上并失败——这是移动端必须避免的问题。
+ *
+ * 因此这里默认使用相对路径（空 base），让请求跟随当前页面来源。
+ * 只有当部署在独立 API 域名下时才需要设置 NEXT_PUBLIC_BASE_URL。
+ */
 
-export async function httpGet(url: string) {
-  const token = localStorage.getItem("token");
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (token) headers["Authorization"] = `Bearer ${token}`;
+const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "";
 
-  const res = await fetch(`${BASE_URL}${url}`, { headers });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: "请求失败" }));
-    throw new Error(err.error || "请求失败");
+function authHeaders(extra?: Record<string, string>): Record<string, string> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...extra,
+  };
+  if (typeof window !== "undefined") {
+    const token = localStorage.getItem("token");
+    if (token) headers["Authorization"] = `Bearer ${token}`;
   }
+  return headers;
+}
+
+async function parseError(res: Response, fallback: string): Promise<never> {
+  const body = await res.json().catch(() => null);
+  throw new Error(body?.error || fallback);
+}
+
+export async function httpGet<T = any>(url: string): Promise<T> {
+  const res = await fetch(`${BASE_URL}${url}`, {
+    headers: authHeaders(),
+    cache: "no-store",
+  });
+  if (!res.ok) await parseError(res, "请求失败");
   return res.json();
 }
 
-export async function httpPost(url: string, body?: any) {
-  const token = localStorage.getItem("token");
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (token) headers["Authorization"] = `Bearer ${token}`;
-
+export async function httpPost<T = any>(url: string, body?: any): Promise<T> {
   const res = await fetch(`${BASE_URL}${url}`, {
     method: "POST",
-    headers,
+    headers: authHeaders(),
     body: body ? JSON.stringify(body) : undefined,
   });
 
-  // Handle SSE (streaming) responses
+  // SSE 流式响应直接交给调用方处理
   const contentType = res.headers.get("content-type") || "";
   if (contentType.includes("text/event-stream")) {
-    return res;
+    return res as unknown as T;
   }
 
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: "请求失败" }));
-    throw new Error(err.error || "请求失败");
-  }
+  if (!res.ok) await parseError(res, "请求失败");
   return res.json();
 }
 
-export async function httpDelete(url: string) {
-  const token = localStorage.getItem("token");
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (token) headers["Authorization"] = `Bearer ${token}`;
-
+export async function httpDelete<T = any>(url: string): Promise<T> {
   const res = await fetch(`${BASE_URL}${url}`, {
     method: "DELETE",
-    headers,
+    headers: authHeaders(),
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: "删除失败" }));
-    throw new Error(err.error || "删除失败");
-  }
+  if (!res.ok) await parseError(res, "删除失败");
   return res.json();
 }
 
-export async function httpPatch(url: string, body?: any) {
-  const token = localStorage.getItem("token");
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (token) headers["Authorization"] = `Bearer ${token}`;
-
+export async function httpPatch<T = any>(url: string, body?: any): Promise<T> {
   const res = await fetch(`${BASE_URL}${url}`, {
     method: "PATCH",
-    headers,
+    headers: authHeaders(),
     body: body ? JSON.stringify(body) : undefined,
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: "请求失败" }));
-    throw new Error(err.error || "请求失败");
-  }
+  if (!res.ok) await parseError(res, "请求失败");
   return res.json();
 }

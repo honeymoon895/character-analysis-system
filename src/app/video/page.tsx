@@ -3,44 +3,43 @@
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuthStore } from "@/store/auth";
-import { Header } from "@/components/Header";
 import { httpGet, httpPost } from "@/lib/http";
+
+const SCENE_TYPES = [
+  { id: "daily", label: "日常相处", desc: "轻松的聊天与陪伴" },
+  { id: "conflict", label: "冲突时刻", desc: "观点冲撞、情绪张力" },
+  { id: "warm", label: "温暖瞬间", desc: "被看见、被接住的时刻" },
+  { id: "custom", label: "自由描述", desc: "写下你想要的场景" },
+];
+
+const SCENE_PROMPTS: Record<string, string> = {
+  daily: "日常对话场景，氛围轻松自然，人物表情温和",
+  conflict: "两人对话场景，氛围紧张，人物表情专注严肃",
+  warm: "温馨感人的画面，光线柔和，人物表情温暖",
+};
+
+const DURATIONS = [5, 10, 15, 30, 60];
 
 export default function VideoPage() {
   return (
-    <Suspense fallback={
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-[#6c63ff]" />
-      </div>
-    }>
-      <VideoGenerateContent />
+    <Suspense
+      fallback={
+        <div className="shell pt-10">
+          <div className="h-32 rounded-2xl bg-white/[0.03] animate-pulse" />
+        </div>
+      }
+    >
+      <VideoContent />
     </Suspense>
   );
 }
 
-// ─── 场景类型预设 ─────────────────────────────
-const SCENE_TYPES = [
-  { id: "daily", label: "💬 日常对话", icon: "☕", desc: "日常聊天、相处的温馨场景" },
-  { id: "conflict", label: "⚡ 冲突时刻", icon: "💥", desc: "观点冲突、情绪波动的场景" },
-  { id: "warm", label: "🌅 温馨时刻", icon: "🌟", desc: "感动、温暖、治愈的瞬间" },
-  { id: "custom", label: "✍️ 自定义", icon: "🎬", desc: "自由描述你想要的场景" },
-];
-
-const SCENE_PROMPTS: Record<string, string> = {
-  daily: "请生成一段日常对话场景的视频，氛围轻松自然，人物表情温和",
-  conflict: "请生成一段冲突场景的视频，情绪张力强，人物表情严肃",
-  warm: "请生成一段温馨感人的视频，光线柔和，人物表情温暖",
-};
-
-const DURATION_OPTIONS = [5, 10, 15, 30, 60];
-
-function VideoGenerateContent() {
+function VideoContent() {
   const { user, isAuthenticated } = useAuthStore();
   const router = useRouter();
   const searchParams = useSearchParams();
   const characterId = searchParams.get("characterId");
 
-  // ── 步骤状态 ──
   const [step, setStep] = useState(1);
   const [sceneType, setSceneType] = useState("");
   const [customPrompt, setCustomPrompt] = useState("");
@@ -48,83 +47,71 @@ function VideoGenerateContent() {
   const [includeTa, setIncludeTa] = useState(true);
   const [duration, setDuration] = useState(5);
 
-  // ── 生成状态 ──
   const [generating, setGenerating] = useState(false);
   const [progress, setProgress] = useState("");
-  const [progressDetail, setProgressDetail] = useState("");
   const [videoUrl, setVideoUrl] = useState("");
   const [stitched, setStitched] = useState(false);
   const [segments, setSegments] = useState(0);
   const [error, setError] = useState("");
 
-  // ── 角色数据 ──
   const [character, setCharacter] = useState<any>(null);
 
   useEffect(() => {
-    if (!isAuthenticated()) { router.push("/login"); return; }
+    if (!isAuthenticated()) {
+      router.push("/login");
+      return;
+    }
     if (characterId) loadCharacter();
   }, []);
 
-  const loadCharacter = async () => {
+  async function loadCharacter() {
     try {
       const res = await httpGet(`/api/character/${characterId}`);
       setCharacter(res.character);
     } catch {}
-  };
+  }
 
-  // ── 获取最终 prompt ──
-  const buildFinalPrompt = (): string => {
+  function buildFinalPrompt(): string {
     if (sceneType === "custom") return customPrompt;
     const base = SCENE_PROMPTS[sceneType] || "";
-    const charName = character?.name || "TA";
-    const mePart = includeMe ? "（画面中包括「我」）" : "";
-    const taPart = includeTa ? `（画面中包括「${charName}」）` : "";
-    return `${base}，场景中有${charName}${mePart}${taPart}。电影级画质，自然光线，细腻情感表达。`;
-  };
+    const name = character?.name || "TA";
+    const parts = [base, `画面中有${name}`];
+    if (includeMe) parts.push("（也包括「我」）");
+    parts.push("电影级画面，自然光，细腻情绪");
+    return parts.join("，");
+  }
 
-  // ── 提交生成 ──
-  const handleGenerate = async () => {
+  const publicUrl = (url?: string) =>
+    url && url.startsWith("http") ? url : undefined;
+
+  async function generate() {
     setGenerating(true);
-    setProgress("正在准备...");
+    setProgress("正在创建任务……");
     setVideoUrl("");
     setError("");
-
     try {
-      const finalPrompt = buildFinalPrompt();
-      setProgress("正在创建视频任务...");
-
-      // 获取图片 URL（只传公网可访问的，本地 localhost 的跳过）
-      const toPublicUrl = (url: string | undefined): string | undefined => {
-        if (!url) return undefined;
-        if (url.startsWith("http")) return url; // 已经是公网 URL（dicebear 等）
-        if (url.startsWith("/uploads/")) return undefined; // 本地文件，跳过
-        return undefined;
-      };
-
       const res = await httpPost("/api/video/generate", {
         characterId: characterId ? parseInt(characterId) : undefined,
-        prompt: finalPrompt,
+        prompt: buildFinalPrompt(),
         duration,
-        imageUrl: toPublicUrl(user?.avatar),
-        characterImageUrl: toPublicUrl(character?.portraitUrl),
+        imageUrl: publicUrl(user?.avatar),
+        characterImageUrl: publicUrl(character?.portraitUrl),
       });
-
       if (res.videoUrl) {
         setVideoUrl(res.videoUrl);
-        setStitched(res.stitched);
-        setSegments(res.segments);
-        setProgress("✅ 生成完成！");
+        setStitched(Boolean(res.stitched));
+        setSegments(res.segments || 0);
+        setProgress("生成完成");
       }
-    } catch (err: any) {
-      setError(err.message || "生成失败");
-      setProgress("❌ 生成失败");
+    } catch (e: any) {
+      setError(e.message || "生成失败");
+      setProgress("");
     } finally {
       setGenerating(false);
     }
-  };
+  }
 
-  // ── 重置 ──
-  const handleReset = () => {
+  function reset() {
     setStep(1);
     setSceneType("");
     setCustomPrompt("");
@@ -134,333 +121,351 @@ function VideoGenerateContent() {
     setVideoUrl("");
     setProgress("");
     setError("");
-  };
+  }
 
-  if (!isAuthenticated()) return null;
-
-  // ── 查看当前角色头像URL格式 ──
-  const getFullUrl = (url: string) => {
-    if (url.startsWith("http")) return url;
-    return window.location.origin + url;
-  };
+  const fullUrl = (u: string) =>
+    u.startsWith("http") ? u : window.location.origin + u;
 
   return (
-    <>
-      <Header />
-      <main className="flex-1 py-8">
-        <div className="page-container max-w-2xl mx-auto">
-          <div className="flex items-center gap-3 mb-6">
-            <button
-              onClick={() => router.back()}
-              className="text-gray-400 hover:text-gray-600"
-            >
-              ← 返回
-            </button>
-            <h1 className="text-2xl font-bold text-gray-900">🎬 AI 视频生成</h1>
-          </div>
+    <div className="shell pt-5 md:pt-8 pb-10 max-w-2xl">
+      <button
+        onClick={() => router.back()}
+        className="flex items-center gap-1.5 text-[12px] text-bone-500 hover:text-bone-200 transition-colors mb-5 -ml-1 min-h-[32px]"
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+          <path d="m15 6-6 6 6 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        返回
+      </button>
 
-          {/* 进度条 */}
-          <div className="flex gap-1 mb-6">
-            {[1, 2, 3, 4].map((s) => (
-              <div
-                key={s}
-                className={`flex-1 h-1.5 rounded-full transition-all ${
-                  s <= step ? "bg-[#6c63ff]" : "bg-gray-200"
-                }`}
-              />
-            ))}
-          </div>
+      <header className="mb-6 rise">
+        <div className="text-[11px] tracking-[0.22em] uppercase text-bone-500 mb-2">
+          情景短片
+        </div>
+        <h1 className="font-display text-[24px] md:text-[28px] text-bone-50">
+          {character ? `把与「${character.name}」的互动演出来` : "生成情景短片"}
+        </h1>
+        <p className="text-[12.5px] text-bone-500 mt-2 leading-relaxed">
+          用画面回看你们的相处方式，有时比文字分析更直观。
+        </p>
+      </header>
 
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-6">
-            {character && (
-              <div className="flex items-center gap-3 mb-6 pb-4 border-b border-gray-50">
-                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#6c63ff] to-[#8b85ff] flex items-center justify-center text-white text-sm font-bold overflow-hidden">
-                  {character.portraitUrl?.includes("dicebear.com") ? (
-                    character.name.charAt(0)
-                  ) : (
-                    <img src={character.portraitUrl} alt="" className="w-full h-full object-cover" />
-                  )}
-                </div>
-                <span className="text-sm text-gray-600">
-                  生成关于 <strong>{character.name}</strong> 的视频
+      {/* 步骤指示 */}
+      <div className="flex gap-1 mb-5">
+        {[1, 2, 3, 4].map((s) => (
+          <div
+            key={s}
+            className="flex-1 h-[2px] rounded-full transition-colors"
+            style={{
+              background:
+                s <= step ? "rgba(217,167,92,0.7)" : "rgba(255,255,255,0.07)",
+            }}
+          />
+        ))}
+      </div>
+
+      <div className="surface-raised p-5 md:p-6 mb-4">
+        {character && (
+          <div className="flex items-center gap-3 mb-5 pb-4 border-b border-white/[0.07]">
+            <div className="w-9 h-9 rounded-full overflow-hidden shrink-0 border border-white/10 bg-ink-750 flex items-center justify-center">
+              {character.portraitUrl &&
+              !character.portraitUrl.includes("dicebear.com") ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={character.portraitUrl} alt="" className="w-full h-full object-cover" />
+              ) : (
+                <span className="font-display text-[13px] text-bone-200">
+                  {character.name.charAt(0)}
                 </span>
-              </div>
-            )}
-
-            {!character && characterId && (
-              <div className="text-center py-8 text-gray-400">
-                加载角色信息中...
-              </div>
-            )}
-
-            {/* ══════ Step 1: 场景类型 ══════ */}
-            {step === 1 && (
-              <div className="animate-fade-in-up">
-                <h2 className="text-lg font-semibold text-gray-800 mb-4">选择场景类型</h2>
-                <div className="grid grid-cols-2 gap-3">
-                  {SCENE_TYPES.map((st) => (
-                    <button
-                      key={st.id}
-                      onClick={() => setSceneType(st.id)}
-                      className={`p-4 rounded-xl border-2 text-left transition-all ${
-                        sceneType === st.id
-                          ? "border-[#6c63ff] bg-[#6c63ff]/5"
-                          : "border-gray-100 hover:border-gray-200"
-                      }`}
-                    >
-                      <div className="text-2xl mb-2">{st.icon}</div>
-                      <div className="font-medium text-sm text-gray-800">{st.label}</div>
-                      <div className="text-xs text-gray-400 mt-1">{st.desc}</div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* ══════ Step 2: 场景描述 ══════ */}
-            {step === 2 && (
-              <div className="animate-fade-in-up">
-                <h2 className="text-lg font-semibold text-gray-800 mb-4">
-                  {sceneType === "custom" ? "详细描述你想要的场景" : "补充场景细节（可选）"}
-                </h2>
-                <textarea
-                  value={customPrompt}
-                  onChange={(e) => setCustomPrompt(e.target.value)}
-                  placeholder={
-                    sceneType === "custom"
-                      ? "请详细描述视频的场景、人物、氛围、动作等..."
-                      : "可以补充更多细节，例如：傍晚的咖啡厅、柔和的灯光..."
-                  }
-                  rows={5}
-                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-[#6c63ff] focus:ring-2 focus:ring-[#6c63ff]/20 outline-none transition-all resize-none"
-                />
-                {sceneType !== "custom" && (
-                  <div className="mt-3 p-3 bg-gray-50 rounded-xl">
-                    <p className="text-xs text-gray-500">基础描述：</p>
-                    <p className="text-sm text-gray-700 mt-1">{buildFinalPrompt()}</p>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* ══════ Step 3: 角色设定 ══════ */}
-            {step === 3 && (
-              <div className="animate-fade-in-up">
-                <h2 className="text-lg font-semibold text-gray-800 mb-4">画面角色</h2>
-                <p className="text-sm text-gray-500 mb-6">
-                  选择哪些角色出现在视频中，系统会自动使用对应头像作为参考
-                </p>
-
-                <div className="space-y-4">
-                  <label className="flex items-center gap-4 p-4 rounded-xl border border-gray-100 hover:border-gray-200 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={includeMe}
-                      onChange={(e) => setIncludeMe(e.target.checked)}
-                      className="w-5 h-5 rounded text-[#6c63ff] focus:ring-[#6c63ff]"
-                    />
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#4a90d9] to-[#6cb4ee] flex items-center justify-center text-white text-xs font-bold overflow-hidden">
-                          {user?.avatar ? (
-                            <img src={user.avatar} alt="" className="w-full h-full object-cover" />
-                          ) : (
-                            "我"
-                          )}
-                        </div>
-                        <span className="font-medium text-gray-800">我</span>
-                      </div>
-                      {user?.avatar && (
-                        <p className="text-xs text-gray-400 mt-1">将使用当前头像作为人物参考</p>
-                      )}
-                    </div>
-                  </label>
-
-                  {character && (
-                    <label className="flex items-center gap-4 p-4 rounded-xl border border-gray-100 hover:border-gray-200 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={includeTa}
-                        onChange={(e) => setIncludeTa(e.target.checked)}
-                        className="w-5 h-5 rounded text-[#6c63ff] focus:ring-[#6c63ff]"
-                      />
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#6c63ff] to-[#8b85ff] flex items-center justify-center text-white text-xs font-bold overflow-hidden">
-                            {character.portraitUrl?.includes("dicebear.com") ? (
-                              character.name.charAt(0)
-                            ) : (
-                              <img src={character.portraitUrl} alt="" className="w-full h-full object-cover" />
-                            )}
-                          </div>
-                          <span className="font-medium text-gray-800">{character.name}</span>
-                        </div>
-                        {character.portraitUrl && (
-                          <p className="text-xs text-gray-400 mt-1">将使用角色头像作为人物参考</p>
-                        )}
-                      </div>
-                    </label>
-                  )}
-
-                  {!includeMe && !includeTa && (
-                    <p className="text-xs text-amber-500">
-                      提示：未选择任何角色，将根据场景描述纯文本生成
-                    </p>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* ══════ Step 4: 时长 + 生成 ══════ */}
-            {step === 4 && (
-              <div className="animate-fade-in-up">
-                <h2 className="text-lg font-semibold text-gray-800 mb-4">视频时长</h2>
-                <p className="text-sm text-gray-500 mb-6">
-                  {duration > 18
-                    ? `超过 18 秒的视频将自动分段生成后拼接`
-                    : `单段生成，无需拼接`}
-                </p>
-
-                <div className="flex gap-2 mb-6 flex-wrap">
-                  {DURATION_OPTIONS.map((d) => (
-                    <button
-                      key={d}
-                      onClick={() => setDuration(d)}
-                      className={`px-5 py-3 rounded-xl border-2 transition-all ${
-                        duration === d
-                          ? "border-[#6c63ff] bg-[#6c63ff]/5 text-[#6c63ff] font-medium"
-                          : "border-gray-100 text-gray-600 hover:border-gray-200"
-                      }`}
-                    >
-                      {d < 60 ? `${d}秒` : `${Math.floor(d / 60)}分${d % 60}秒`}
-                      {d > 18 && <span className="block text-[10px] text-gray-400">等待时间较长</span>}
-                    </button>
-                  ))}
-                </div>
-
-                {/* 最终预览 */}
-                <div className="bg-gray-50 rounded-xl p-4 mb-6">
-                  <p className="text-xs text-gray-500 mb-2">📋 最终描述：</p>
-                  <p className="text-sm text-gray-700 whitespace-pre-wrap">{buildFinalPrompt()}</p>
-                  <div className="flex gap-4 mt-3 text-xs text-gray-400">
-                    <span>⏱ {duration}秒</span>
-                    {includeMe && <span>👤 包含"我"</span>}
-                    {character && includeTa && <span>👥 包含"{character.name}"</span>}
-                    {duration > 18 && <span>🔗 将拼接 {Math.ceil(duration / 18)} 段</span>}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* ══════ Step 导航按钮 ══════ */}
-            <div className="flex justify-between mt-6 pt-4 border-t border-gray-100">
-              {step > 1 ? (
-                <button
-                  onClick={() => setStep(step - 1)}
-                  className="px-6 py-2.5 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50 transition-all"
-                >
-                  上一步
-                </button>
-              ) : (
-                <div />
               )}
+            </div>
+            <span className="text-[13px] text-bone-300">
+              关于 <span className="text-bone-50">{character.name}</span>
+            </span>
+          </div>
+        )}
 
-              {step < 4 ? (
+        {step === 1 && (
+          <div className="rise">
+            <h2 className="text-[14px] text-bone-50 mb-4">选择场景</h2>
+            <div className="grid grid-cols-2 gap-2.5">
+              {SCENE_TYPES.map((s) => (
                 <button
-                  onClick={() => {
-                    if (step === 1 && !sceneType) { alert("请选择场景类型"); return; }
-                    if (step === 2 && sceneType === "custom" && !customPrompt.trim()) { alert("请输入场景描述"); return; }
-                    setStep(step + 1);
-                  }}
-                  className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-[#6c63ff] to-[#8b85ff] text-white font-medium hover:shadow-md transition-all"
+                  key={s.id}
+                  onClick={() => setSceneType(s.id)}
+                  className={`p-4 rounded-xl border text-left transition-colors ${
+                    sceneType === s.id
+                      ? "border-amber/40 bg-amber/[0.06]"
+                      : "border-white/[0.07] hover:border-white/[0.12]"
+                  }`}
                 >
-                  下一步
+                  <div className="text-[13.5px] text-bone-50 mb-1">{s.label}</div>
+                  <div className="text-[11px] text-bone-500 leading-relaxed">
+                    {s.desc}
+                  </div>
                 </button>
-              ) : (
-                <button
-                  onClick={handleGenerate}
-                  disabled={generating}
-                  className="px-8 py-2.5 rounded-xl bg-gradient-to-r from-[#6c63ff] to-[#8b85ff] text-white font-medium hover:shadow-md transition-all disabled:opacity-50"
-                >
-                  {generating ? "生成中..." : "🎬 开始生成"}
-                </button>
-              )}
+              ))}
             </div>
           </div>
+        )}
 
-          {/* ══════ 生成进度 ══════ */}
-          {progress && (
-            <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 mb-6 animate-fade-in-up">
-              <div className="flex items-center gap-3">
-                {generating && (
-                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-[#6c63ff]" />
-                )}
-                <span className="text-sm text-gray-700">{progress}</span>
-              </div>
-              {progressDetail && (
-                <p className="text-xs text-gray-400 mt-2">{progressDetail}</p>
-              )}
-              {generating && (
-                <div className="mt-3 h-2 rounded-full bg-gray-100 overflow-hidden">
-                  <div className="h-full rounded-full bg-gradient-to-r from-[#6c63ff] to-[#8b85ff] animate-pulse w-2/3" />
+        {step === 2 && (
+          <div className="rise">
+            <h2 className="text-[14px] text-bone-50 mb-1">
+              {sceneType === "custom" ? "描述场景" : "补充细节"}
+            </h2>
+            <p className="text-[12px] text-bone-500 mb-4">
+              {sceneType === "custom"
+                ? "写清楚地点、时间、人物动作与氛围"
+                : "可以留空，也可以用一句话限定场景"}
+            </p>
+            <textarea
+              value={customPrompt}
+              onChange={(e) => setCustomPrompt(e.target.value)}
+              placeholder={
+                sceneType === "custom"
+                  ? "比如：深夜的厨房，只有一盏灯亮着，两个人背对背站着，谁也没开口。"
+                  : "比如：傍晚的咖啡店，靠窗的位置，外面在下雨。"
+              }
+              rows={5}
+              className="field"
+            />
+            {sceneType !== "custom" && (
+              <div className="mt-3 bg-white/[0.025] rounded-xl px-3.5 py-3">
+                <div className="text-[10px] uppercase tracking-[0.14em] text-bone-600 mb-1.5">
+                  将用于生成
                 </div>
+                <p className="text-[12px] text-bone-400 leading-relaxed">
+                  {buildFinalPrompt()}
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {step === 3 && (
+          <div className="rise">
+            <h2 className="text-[14px] text-bone-50 mb-1">画面里有谁</h2>
+            <p className="text-[12px] text-bone-500 mb-4">
+              有头像的会作为人物参考
+            </p>
+
+            <div className="space-y-2">
+              <Toggle
+                checked={includeMe}
+                onChange={setIncludeMe}
+                label="我"
+                avatar={user?.avatar}
+                initial={(user?.username || "我").charAt(0)}
+              />
+              {character && (
+                <Toggle
+                  checked={includeTa}
+                  onChange={setIncludeTa}
+                  label={character.name}
+                  avatar={
+                    character.portraitUrl?.includes("dicebear.com")
+                      ? undefined
+                      : character.portraitUrl
+                  }
+                  initial={character.name.charAt(0)}
+                />
               )}
             </div>
-          )}
 
-          {/* ══════ 错误提示 ══════ */}
-          {error && (
-            <div className="bg-red-50 rounded-xl p-4 border border-red-100 mb-6 animate-fade-in-up">
-              <p className="text-sm text-red-600">❌ {error}</p>
-            </div>
-          )}
+            {!includeMe && !includeTa && (
+              <p className="text-[11.5px] text-amber/80 mt-3">
+                没有选择角色，将仅按场景描述生成
+              </p>
+            )}
+          </div>
+        )}
 
-          {/* ══════ 视频播放 ══════ */}
-          {videoUrl && (
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-6 animate-fade-in-up">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold text-gray-800">🎬 生成结果</h2>
-                <div className="flex gap-2">
-                  {stitched && (
-                    <span className="text-xs px-2 py-1 rounded-full bg-[#6c63ff]/5 text-[#6c63ff]">
-                      已拼接 {segments} 段
-                    </span>
-                  )}
-                  <span className="text-xs px-2 py-1 rounded-full bg-green-50 text-green-600">
-                    {duration}秒
-                  </span>
-                </div>
-              </div>
+        {step === 4 && (
+          <div className="rise">
+            <h2 className="text-[14px] text-bone-50 mb-1">时长</h2>
+            <p className="text-[12px] text-bone-500 mb-4">
+              超过 18 秒会自动分段生成再拼接，耗时更长
+            </p>
 
-              <video
-                controls
-                autoPlay
-                className="w-full rounded-xl bg-black"
-                style={{ maxHeight: "500px" }}
-              >
-                <source src={videoUrl.startsWith("http") ? videoUrl : getFullUrl(videoUrl)} type="video/mp4" />
-                您的浏览器不支持视频播放
-              </video>
-
-              <div className="flex gap-3 mt-4">
-                <a
-                  href={videoUrl.startsWith("http") ? videoUrl : getFullUrl(videoUrl)}
-                  download
-                  className="flex-1 py-3 rounded-xl bg-gradient-to-r from-[#6c63ff] to-[#8b85ff] text-white font-medium text-center hover:shadow-md transition-all"
-                >
-                  ⬇️ 下载视频
-                </a>
+            <div className="flex gap-2 flex-wrap mb-5">
+              {DURATIONS.map((d) => (
                 <button
-                  onClick={handleReset}
-                  className="px-6 py-3 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50 transition-all"
+                  key={d}
+                  onClick={() => setDuration(d)}
+                  className={`px-4 min-h-[44px] rounded-xl border text-[13px] transition-colors ${
+                    duration === d
+                      ? "border-amber/40 bg-amber/[0.06] text-amber-bright"
+                      : "border-white/[0.07] text-bone-400"
+                  }`}
                 >
-                  再做一个
+                  {d}秒
                 </button>
+              ))}
+            </div>
+
+            <div className="bg-white/[0.025] rounded-xl px-3.5 py-3">
+              <div className="text-[10px] uppercase tracking-[0.14em] text-bone-600 mb-1.5">
+                最终描述
               </div>
+              <p className="text-[12px] text-bone-400 leading-relaxed">
+                {buildFinalPrompt()}
+              </p>
+              <div className="flex flex-wrap gap-3 mt-2.5 text-[11px] text-bone-600">
+                <span>{duration} 秒</span>
+                {includeMe && <span>包含「我」</span>}
+                {character && includeTa && <span>包含「{character.name}」</span>}
+                {duration > 18 && <span>分 {Math.ceil(duration / 18)} 段生成</span>}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 导航 */}
+        <div className="flex gap-2 mt-6 pt-4 border-t border-white/[0.07]">
+          {step > 1 && (
+            <button
+              onClick={() => setStep(step - 1)}
+              className="btn-ghost px-5"
+            >
+              上一步
+            </button>
+          )}
+          <div className="flex-1" />
+          {step < 4 ? (
+            <button
+              onClick={() => {
+                if (step === 1 && !sceneType) return;
+                if (step === 2 && sceneType === "custom" && !customPrompt.trim())
+                  return;
+                setStep(step + 1);
+              }}
+              disabled={
+                (step === 1 && !sceneType) ||
+                (step === 2 && sceneType === "custom" && !customPrompt.trim())
+              }
+              className="btn-primary px-6"
+            >
+              下一步
+            </button>
+          ) : (
+            <button
+              onClick={generate}
+              disabled={generating}
+              className="btn-primary px-6"
+            >
+              {generating ? "生成中……" : "开始生成"}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {progress && (
+        <div className="surface p-4 mb-4 rise">
+          <div className="flex items-center gap-2.5">
+            {generating && (
+              <span className="w-1.5 h-1.5 rounded-full bg-amber blink shrink-0" />
+            )}
+            <span className="text-[13px] text-bone-200">{progress}</span>
+          </div>
+          {generating && (
+            <div className="mt-3 h-0.5 rounded-full bg-white/[0.07] overflow-hidden relative">
+              <div className="absolute inset-0 sweep" />
             </div>
           )}
         </div>
-      </main>
-    </>
+      )}
+
+      {error && (
+        <div className="text-[12.5px] text-rose bg-rose/[0.08] border border-rose/20 rounded-xl px-4 py-3 mb-4">
+          {error}
+        </div>
+      )}
+
+      {videoUrl && (
+        <div className="surface-raised p-4 md:p-5 rise">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-[14px] text-bone-50">生成结果</h2>
+            <div className="flex gap-2">
+              {stitched && (
+                <span className="chip">{segments} 段拼接</span>
+              )}
+              <span className="chip chip-jade">{duration} 秒</span>
+            </div>
+          </div>
+
+          <video
+            controls
+            autoPlay
+            className="w-full rounded-xl bg-black"
+            style={{ maxHeight: 500 }}
+          >
+            <source src={fullUrl(videoUrl)} type="video/mp4" />
+          </video>
+
+          <div className="flex gap-2 mt-3">
+            <a
+              href={fullUrl(videoUrl)}
+              download
+              className="btn-primary flex-1"
+            >
+              下载
+            </a>
+            <button onClick={reset} className="btn-ghost px-5">
+              再做一个
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Toggle({
+  checked,
+  onChange,
+  label,
+  avatar,
+  initial,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  label: string;
+  avatar?: string;
+  initial: string;
+}) {
+  return (
+    <button
+      onClick={() => onChange(!checked)}
+      className={`w-full flex items-center gap-3 p-3.5 rounded-xl border transition-colors ${
+        checked
+          ? "border-amber/35 bg-amber/[0.05]"
+          : "border-white/[0.07]"
+      }`}
+    >
+      <div className="w-9 h-9 rounded-full overflow-hidden shrink-0 border border-white/10 bg-ink-750 flex items-center justify-center">
+        {avatar ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={avatar} alt="" className="w-full h-full object-cover" />
+        ) : (
+          <span className="text-[12px] text-bone-300">{initial}</span>
+        )}
+      </div>
+      <span className="text-[13.5px] text-bone-100 flex-1 text-left">
+        {label}
+      </span>
+      <span
+        className={`w-5 h-5 rounded-md border flex items-center justify-center transition-colors ${
+          checked
+            ? "border-amber/60 bg-amber/20"
+            : "border-white/15"
+        }`}
+      >
+        {checked && (
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" className="text-amber-bright">
+            <path d="m5 12.5 4.5 4.5L19 7" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        )}
+      </span>
+    </button>
   );
 }

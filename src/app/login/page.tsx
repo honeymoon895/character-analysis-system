@@ -1,20 +1,21 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { httpPost } from "@/lib/http";
 import { useAuthStore } from "@/store/auth";
 
 export default function LoginPage() {
+  const router = useRouter();
+  const { setAuth } = useAuthStore();
+
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const router = useRouter();
-  const { setAuth } = useAuthStore();
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  async function submit(e: FormEvent) {
     e.preventDefault();
     setError("");
     setLoading(true);
@@ -23,72 +24,76 @@ export default function LoginPage() {
       setAuth(res.user, res.token);
       router.push("/");
     } catch (err: any) {
-      setError(err.message);
+      setError(err.message || "登录失败");
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#f8f9fc] to-[#e8e6ff] p-4">
-      <div className="w-full max-w-md">
-        {/* Logo */}
-        <div className="text-center mb-8">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#6c63ff] to-[#8b85ff] flex items-center justify-center text-white text-3xl mx-auto mb-4 shadow-lg">
-            ♟
-          </div>
-          <h1 className="text-2xl font-bold text-gray-900">欢迎回来</h1>
-          <p className="text-gray-500 mt-1">登录以继续使用角色人物多维分析系统</p>
+    <div className="min-h-dvh flex flex-col justify-center px-5 py-10 max-w-sm mx-auto">
+      <div className="mb-10 rise">
+        <div
+          className="w-12 h-12 rounded-[14px] mb-6 flex items-center justify-center"
+          style={{
+            background:
+              "linear-gradient(145deg, rgba(237,192,122,0.95), rgba(169,124,60,0.9))",
+          }}
+        >
+          <span className="w-4 h-4 rounded-full bg-ink-950" />
+        </div>
+        <h1 className="font-display text-[28px] leading-tight text-bone-50">
+          镜鉴
+        </h1>
+        <p className="text-[13px] text-bone-500 mt-2 leading-relaxed">
+          理解一个人，从承认自己看不透开始。
+        </p>
+      </div>
+
+      <form onSubmit={submit} className="space-y-3 rise" style={{ animationDelay: "80ms" }}>
+        <div>
+          <label className="block text-[12px] text-bone-400 mb-2">用户名</label>
+          <input
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            className="field"
+            autoComplete="username"
+            required
+          />
+        </div>
+        <div>
+          <label className="block text-[12px] text-bone-400 mb-2">密码</label>
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className="field"
+            autoComplete="current-password"
+            required
+          />
         </div>
 
-        {/* Form */}
-        <form onSubmit={handleSubmit} className="bg-white rounded-2xl shadow-xl p-8">
-          {error && (
-            <div className="mb-4 p-3 rounded-xl bg-red-50 border border-red-100 text-red-600 text-sm">
-              {error}
-            </div>
-          )}
-
-          <div className="mb-5">
-            <label className="block text-sm font-medium text-gray-700 mb-2">用户名</label>
-            <input
-              type="text"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-[#6c63ff] focus:ring-2 focus:ring-[#6c63ff]/20 outline-none transition-all"
-              placeholder="请输入用户名"
-              required
-            />
+        {error && (
+          <div className="text-[12px] text-rose bg-rose/[0.08] border border-rose/20 rounded-lg px-3 py-2.5">
+            {error}
           </div>
+        )}
 
-          <div className="mb-6">
-            <label className="block text-sm font-medium text-gray-700 mb-2">密码</label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-[#6c63ff] focus:ring-2 focus:ring-[#6c63ff]/20 outline-none transition-all"
-              placeholder="请输入密码"
-              required
-            />
-          </div>
+        <button
+          type="submit"
+          disabled={loading}
+          className="btn-primary w-full mt-2"
+        >
+          {loading ? "登录中……" : "登录"}
+        </button>
+      </form>
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full py-3 rounded-xl bg-gradient-to-r from-[#6c63ff] to-[#8b85ff] text-white font-medium hover:shadow-lg transition-all disabled:opacity-50"
-          >
-            {loading ? "登录中..." : "登 录"}
-          </button>
-
-          <p className="text-center mt-4 text-sm text-gray-500">
-            还没有账号？{" "}
-            <Link href="/register" className="text-[#6c63ff] hover:underline font-medium">
-              立即注册
-            </Link>
-          </p>
-        </form>
-      </div>
+      <p className="text-center text-[12.5px] text-bone-500 mt-6">
+        还没有账号？
+        <Link href="/register" className="text-amber/90 ml-1.5">
+          注册
+        </Link>
+      </p>
     </div>
   );
 }

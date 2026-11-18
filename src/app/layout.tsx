@@ -1,25 +1,32 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
+import type { ReactNode } from "react";
 import "./globals.css";
 import { AuthProvider } from "@/components/AuthProvider";
-import { SelfPromptModal } from "@/components/SelfPromptModal";
+import { AppShell } from "@/components/layout/AppShell";
 
 export const metadata: Metadata = {
-  title: "角色人物多维分析系统",
-  description: "利用AI深度理解他人性格特征与行为逻辑，减少人际交往中的心理内耗",
+  title: "镜鉴 · 人格研判",
+  description:
+    "以证据为基础的人格研判系统：理解一个人的动机、防御与行为规律，而不只是给你贴标签。",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  viewportFit: "cover",
+  themeColor: "#07080b",
 };
 
 export default function RootLayout({
   children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+}: Readonly<{ children: ReactNode }>) {
   return (
-    <html lang="zh-CN" className="h-full antialiased">
-      <body className="min-h-full flex flex-col bg-[#f8f9fc] text-[#1a1a2e]" style={{ fontFamily: 'system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif' }}>
+    <html lang="zh-CN" className="h-full">
+      <body className="min-h-full">
         <AuthProvider>
-          {children}
+          <AppShell>{children}</AppShell>
         </AuthProvider>
-        <SelfPromptModal />
       </body>
     </html>
   );

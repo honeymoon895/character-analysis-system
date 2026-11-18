@@ -24,6 +24,8 @@ model User {
   selfPersonalitySummary String?  @map("self_personality_summary")
   selfBehaviorPatterns   String?  @map("self_behavior_patterns") // JSON
   selfValues             String?  @map("self_values")            // JSON
+  // 完整研判档案（AnalysisProfile），包含证据链、竞争假设与可证伪预测
+  selfAnalysisProfile    String?  @map("self_analysis_profile")
   selfAnalysisComplete   Boolean  @default(false) @map("self_analysis_complete")
 
   characters        Character[]
@@ -46,6 +48,8 @@ model Character {
   keyEvents          String?  @map("key_events")
   achievements       String?  // JSON - 主要成就按领域分类
   confidenceScores   String?  @map("confidence_scores")
+  // 完整研判档案（AnalysisProfile JSON）：证据链、竞争假设、可证伪预测、互动策略
+  analysisProfile    String?  @map("analysis_profile")
   isPublic           Boolean  @default(false) @map("is_public")
   viewCount          Int      @default(0) @map("view_count")
   portraitUrl        String?  @map("portrait_url")

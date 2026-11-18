@@ -1,407 +1,566 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useAuthStore } from "@/store/auth";
-import { Header } from "@/components/Header";
-import { CharacterCard } from "@/components/CharacterCard";
-import { BuildCharacterModal } from "@/components/BuildCharacterModal";
-import { LoadingOverlay } from "@/components/LoadingOverlay";
-import { httpGet, httpPost, httpDelete } from "@/lib/http";
+import { httpGet, httpDelete } from "@/lib/http";
 
-const SUGGESTIONS = ["曹操", "马云", "爱因斯坦", "李白", "Elon Musk", "诸葛亮"];
+/**
+ * 人物库（首页）
+ *
+ * 布局顺序按"用户最想做的事"排：
+ * 1. 一个新人物入口（分析公众人物 / 记录身边人）—— 首屏即可见，无需滚动
+ * 2. 最近研判的人物（大卡片，直接看到核心结论）
+ * 3. 完整文库（可搜索、按关系筛选）
+ */
 
-export default function HomePage() {
+interface CharacterItem {
+  id: number;
+  name: string;
+  source: string;
+  traits: any;
+  personalitySummary: string | null;
+  portraitUrl: string | null;
+  basicInfo: any;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export default function LibraryPage() {
   const { isAuthenticated } = useAuthStore();
   const router = useRouter();
+
+  const [items, setItems] = useState<CharacterItem[]>([]);
+  const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
-  const [mode, setMode] = useState<"public" | "custom">("public");
-  const [showBuildModal, setShowBuildModal] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [characters, setCharacters] = useState<any[]>([]);
-  const [showSuggestions, setShowSuggestions] = useState(false);
-  const [filteredSuggestions, setFilteredSuggestions] = useState(SUGGESTIONS);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [filterSource, setFilterSource] = useState<"all" | "WEB" | "USER_BUILT">("all");
-  const [filterRelation, setFilterRelation] = useState("all");
-  const [sortBy, setSortBy] = useState<"newest" | "oldest" | "name" | "score">("newest");
+  const [filter, setFilter] = useState<"all" | "WEB" | "USER_BUILT">("all");
 
   useEffect(() => {
     if (!isAuthenticated()) {
       router.push("/login");
       return;
     }
-    loadCharacters();
+    load();
   }, []);
 
-  const loadCharacters = async () => {
+  async function load() {
     try {
       const res = await httpGet("/api/character/list");
-      setCharacters(res.characters || []);
-    } catch {}
-  };
-
-  const handleDeleteCharacter = async (id: number) => {
-    try {
-      await httpDelete(`/api/character/${id}`);
-      loadCharacters();
-    } catch (err: any) {
-      alert(err.message || "删除失败");
-    }
-  };
-
-  const allRelations = characters
-    .filter((c) => c.source === "USER_BUILT" && c.basicInfo)
-    .map((c) => {
-      try {
-        const info = typeof c.basicInfo === "string" ? JSON.parse(c.basicInfo) : c.basicInfo;
-        return info.relationship || "";
-      } catch { return ""; }
-    })
-    .filter(Boolean)
-    .filter((v, i, a) => a.indexOf(v) === i);
-
-  const filteredCharacters = characters
-    .filter((c) => {
-      if (filterSource !== "all" && c.source !== filterSource) return false;
-      if (filterSource === "USER_BUILT" && filterRelation !== "all" && c.basicInfo) {
-        try {
-          const info = typeof c.basicInfo === "string" ? JSON.parse(c.basicInfo) : c.basicInfo;
-          if (info.relationship !== filterRelation) return false;
-        } catch { return false; }
-      }
-      if (searchTerm.trim()) {
-        const term = searchTerm.toLowerCase();
-        return (
-          c.name.toLowerCase().includes(term) ||
-          (c.personalitySummary && c.personalitySummary.toLowerCase().includes(term))
-        );
-      }
-      return true;
-    })
-    .sort((a, b) => {
-      switch (sortBy) {
-        case "newest": return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-        case "oldest": return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
-        case "name": return a.name.localeCompare(b.name, "zh-CN");
-        case "score": {
-          const aAvg = a.traits?.length
-            ? (Array.isArray(a.traits) ? a.traits : JSON.parse(a.traits)).reduce((s: number, d: any) => s + (d.score ?? 0), 0) / a.traits.length
-            : 0;
-          const bAvg = b.traits?.length
-            ? (Array.isArray(b.traits) ? b.traits : JSON.parse(b.traits)).reduce((s: number, d: any) => s + (d.score ?? 0), 0) / b.traits.length
-            : 0;
-          return bAvg - aAvg;
-        }
-        default: return 0;
-      }
-    });
-
-  const handleQueryChange = (value: string) => {
-    setQuery(value);
-    if (value.trim()) {
-      setFilteredSuggestions(
-        SUGGESTIONS.filter((s) => s.toLowerCase().includes(value.toLowerCase()))
-      );
-      setShowSuggestions(true);
-    } else {
-      setShowSuggestions(false);
-    }
-  };
-
-  const handleAnalyze = async () => {
-    if (!query.trim()) return;
-    setLoading(true);
-    try {
-      const res = await httpPost("/api/character/analyze", { name: query });
-      if (res instanceof Response) {
-        const reader = res.body?.getReader();
-        if (reader) {
-          const decoder = new TextDecoder();
-          let done = false;
-          while (!done) {
-            const { done: d, value } = await reader.read();
-            done = d;
-            if (value) {
-              const text = decoder.decode(value);
-              const lines = text.split("\n").filter((l) => l.startsWith("data: "));
-              for (const line of lines) {
-                const data = line.slice(6);
-                if (data === "[DONE]") {
-                  loadCharacters();
-                  setQuery("");
-                  setLoading(false);
-                  return;
-                }
-                try {
-                  const parsed = JSON.parse(data);
-                  if (parsed.characterId) {
-                    router.push(`/character/${parsed.characterId}`);
-                    return;
-                  }
-                } catch {}
-              }
-            }
-          }
-        }
-      }
-      loadCharacters();
-      setQuery("");
-    } catch (err: any) {
-      alert(err.message);
+      setItems(res.characters || []);
+    } catch {
+      // 静默失败，下一步由空态引导
     } finally {
       setLoading(false);
     }
+  }
+
+  const relationships = useMemo(() => {
+    const set = new Set<string>();
+    for (const c of items) {
+      const info = parse(c.basicInfo);
+      if (info?.relationship) set.add(info.relationship);
+    }
+    return [...set];
+  }, [items]);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return items.filter((c) => {
+      if (filter !== "all" && c.source !== filter) return false;
+      if (!q) return true;
+      return (
+        c.name.toLowerCase().includes(q) ||
+        (c.personalitySummary || "").toLowerCase().includes(q)
+      );
+    });
+  }, [items, query, filter]);
+
+  const recent = filtered.slice(0, 3);
+  const rest = filtered.slice(3);
+
+  async function remove(id: number, name: string) {
+    if (!confirm(`删除「${name}」的档案？此操作不可撤销。`)) return;
+    try {
+      await httpDelete(`/api/character/${id}`);
+      setItems((prev) => prev.filter((c) => c.id !== id));
+    } catch (e: any) {
+      alert(e.message || "删除失败");
+    }
+  }
+
+  // 传给卡片的是同步回调，避免 Promise 返回值污染 onClick 的类型
+  const handleRemove = (id: number, name: string) => {
+    void remove(id, name);
   };
 
-  const handleBuildComplete = (characterId: number) => {
-    setShowBuildModal(false);
-    router.push(`/character/${characterId}`);
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") handleAnalyze();
-  };
+  if (loading) {
+    return <LoadingSkeleton />;
+  }
 
   return (
-    <>
-      <Header />
-      <LoadingOverlay visible={loading} name={query || undefined} />
+    <div className="shell pt-6 md:pt-10 pb-10">
+      {/* ── 页头 ── */}
+      <header className="mb-7 rise">
+        <div className="flex items-end justify-between gap-4">
+          <div>
+            <div className="text-[11px] tracking-[0.22em] uppercase text-bone-500 mb-2">
+              档案库
+            </div>
+            <h1 className="font-display text-[26px] md:text-[34px] leading-tight text-bone-50">
+              {items.length > 0 ? `${items.length} 份人格档案` : "还没有档案"}
+            </h1>
+            <p className="text-[13px] text-bone-400 mt-2 leading-relaxed max-w-md">
+              每一个被认真理解的人，都不该被简化成一句性格描述。
+            </p>
+          </div>
+        </div>
+      </header>
 
-      <main className="flex-1">
-        {/* Hero Section */}
-        <section className="py-16 md:py-24">
-          <div className="page-container">
-            <div className="text-center max-w-2xl mx-auto mb-10">
-              <h1 className="text-4xl md:text-5xl font-bold text-gray-900 mb-4 leading-tight">
-                深度理解他人
-                <span className="block text-transparent bg-clip-text bg-gradient-to-r from-[#6c63ff] to-[#8b85ff]">
-                  减少人际内耗
-                </span>
-              </h1>
-              <p className="text-lg text-gray-500">
-                输入人物姓名或自定义描述，AI将为你生成九维心理特征画像
+      {/* ── 主要入口（始终首屏可见） ── */}
+      <div className="grid gap-3 md:grid-cols-2 mb-8 rise" style={{ animationDelay: "60ms" }}>
+        <Link
+          href="/explore?tab=public"
+          className="surface-raised p-5 press group relative overflow-hidden block"
+        >
+          <div className="flex items-start gap-4">
+            <div className="w-11 h-11 rounded-xl bg-amber/12 border border-amber/25 flex items-center justify-center shrink-0">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="text-amber-bright">
+                <path d="M4 19V7a2 2 0 0 1 2-2h5v14H6a2 2 0 0 1-2-2Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+                <path d="M13 5h5a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-5" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" opacity="0.6" />
+                <path d="M16 9h1.5M16 12.5h1.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" opacity="0.6" />
+              </svg>
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="text-[15px] text-bone-50 font-medium mb-1">
+                分析一个公众人物
+              </div>
+              <p className="text-[12.5px] text-bone-400 leading-relaxed">
+                输入姓名，基于公开史料与言行记载做人格研判
               </p>
             </div>
+            <Arrow />
+          </div>
+        </Link>
 
-            <div className="flex items-center justify-center gap-2 mb-6">
-              <button
-                onClick={() => setMode("public")}
-                className={`px-6 py-2.5 rounded-xl font-medium transition-all ${
-                  mode === "public"
-                    ? "bg-[#6c63ff] text-white shadow-md"
-                    : "bg-white text-gray-600 border border-gray-200 hover:border-gray-300"
-                }`}
-              >
-                🌐 公众人物
-              </button>
-              <button
-                onClick={() => setMode("custom")}
-                className={`px-6 py-2.5 rounded-xl font-medium transition-all ${
-                  mode === "custom"
-                    ? "bg-[#6c63ff] text-white shadow-md"
-                    : "bg-white text-gray-600 border border-gray-200 hover:border-gray-300"
-                }`}
-              >
-                ✍️ 自定义人物
-              </button>
+        <Link
+          href="/explore?tab=personal"
+          className="surface-raised p-5 press group relative overflow-hidden block"
+        >
+          <div className="flex items-start gap-4">
+            <div className="w-11 h-11 rounded-xl bg-jade/12 border border-jade/25 flex items-center justify-center shrink-0">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="text-jade">
+                <circle cx="9" cy="8" r="3" stroke="currentColor" strokeWidth="1.5" />
+                <path d="M3.5 19c.5-3 2.9-4.7 5.5-4.7s5 1.7 5.5 4.7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                <path d="M17 8.5v5M14.5 11h5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+              </svg>
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="text-[15px] text-bone-50 font-medium mb-1">
+                记录一个身边的人
+              </div>
+              <p className="text-[12.5px] text-bone-400 leading-relaxed">
+                从具体行为出发，逐步拼出 TA 的真实动机
+              </p>
+            </div>
+            <Arrow />
+          </div>
+        </Link>
+      </div>
+
+      {/* ── 空态 ── */}
+      {items.length === 0 && (
+        <div className="surface p-8 md:p-12 text-center rise" style={{ animationDelay: "120ms" }}>
+          <div className="w-14 h-14 mx-auto mb-5 rounded-full border border-white/10 flex items-center justify-center breathe">
+            <span className="w-2 h-2 rounded-full bg-amber/70" />
+          </div>
+          <h2 className="font-display text-[19px] text-bone-100 mb-2">
+            从第一个开始
+          </h2>
+          <p className="text-[13px] text-bone-500 leading-relaxed max-w-sm mx-auto">
+            挑一个你真正想弄懂的人——无论是历史里的，还是此刻让你困惑的那位。
+            给出的细节越具体，研判就越接近真实。
+          </p>
+        </div>
+      )}
+
+      {/* ── 最近研判 ── */}
+      {recent.length > 0 && (
+        <section className="mb-8">
+          <SectionLabel label="最近研判" />
+          <div className="space-y-2.5">
+            {recent.map((c, i) => (
+              <RecentCard
+                key={c.id}
+                item={c}
+                onDelete={() => handleRemove(c.id, c.name)}
+                delay={i * 50}
+              />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* ── 完整文库 ── */}
+      {rest.length > 0 && (
+        <section>
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <SectionLabel label="全部档案" inline />
+            <div className="flex gap-1.5">
+              {(
+                [
+                  ["all", "全部"],
+                  ["USER_BUILT", "身边人"],
+                  ["WEB", "公众"],
+                ] as const
+              ).map(([key, label]) => (
+                <button
+                  key={key}
+                  onClick={() => setFilter(key)}
+                  className={`px-3 py-1.5 rounded-lg text-[12px] transition-colors ${
+                    filter === key
+                      ? "bg-white/[0.09] text-bone-50"
+                      : "text-bone-500 hover:text-bone-200"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {items.length > 4 && (
+            <div className="relative mb-3">
+              <SearchIcon />
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="搜索姓名或结论关键词"
+                className="field pl-11"
+              />
+            </div>
+          )}
+
+          <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+            {rest.map((c) => (
+              <SmallCard key={c.id} item={c} onDelete={() => handleRemove(c.id, c.name)} />
+            ))}
+          </div>
+
+          {relationships.length > 0 && (
+            <p className="text-[11px] text-bone-600 mt-4">
+              共 {relationships.length} 种关系类型：{relationships.join(" · ")}
+            </p>
+          )}
+        </section>
+      )}
+
+      {filtered.length === 0 && items.length > 0 && (
+        <div className="surface p-10 text-center">
+          <p className="text-[13px] text-bone-400">没有匹配的档案</p>
+          <button
+            onClick={() => {
+              setQuery("");
+              setFilter("all");
+            }}
+            className="text-[12px] text-amber/80 mt-2"
+          >
+            清除筛选
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ══════════════ 卡片 ══════════════ */
+
+function RecentCard({
+  item,
+  onDelete,
+  delay,
+}: {
+  item: CharacterItem;
+  onDelete: () => void;
+  delay: number;
+}) {
+  const info = parse(item.basicInfo);
+  const measured = measuredCount(item.traits);
+
+  return (
+    <div className="relative rise group" style={{ animationDelay: `${delay}ms` }}>
+      <Link
+        href={`/character/${item.id}`}
+        className="surface p-4 md:p-5 press block hover:border-white/[0.12] transition-colors"
+      >
+        <div className="flex items-start gap-3.5">
+          <Avatar item={item} size={44} />
+
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h3 className="text-[15px] text-bone-50 font-medium truncate">
+                {item.name}
+              </h3>
+              {info?.relationship && (
+                <span className="chip chip-jade text-[10px] py-0.5">
+                  {info.relationship}
+                </span>
+              )}
+              <span className="text-[10px] text-bone-600">
+                {item.source === "WEB" ? "公众人物" : "身边人"}
+              </span>
             </div>
 
-            {mode === "public" ? (
-              <div className="max-w-xl mx-auto relative">
-                <div className="flex gap-2">
-                  <div className="flex-1 relative">
-                    <input
-                      type="text"
-                      value={query}
-                      onChange={(e) => handleQueryChange(e.target.value)}
-                      onKeyDown={handleKeyDown}
-                      onFocus={() => setShowSuggestions(true)}
-                      onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
-                      placeholder="试试输入：曹操、马云、爱因斯坦..."
-                      className="w-full px-5 py-3.5 rounded-xl bg-white border border-gray-200 focus:border-[#6c63ff] focus:ring-2 focus:ring-[#6c63ff]/20 outline-none transition-all shadow-sm text-base"
-                    />
-                    {showSuggestions && filteredSuggestions.length > 0 && (
-                      <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-lg border border-gray-100 py-2 z-10">
-                        {filteredSuggestions.map((s) => (
-                          <button
-                            key={s}
-                            onMouseDown={() => { setQuery(s); setShowSuggestions(false); }}
-                            className="w-full text-left px-4 py-2 hover:bg-gray-50 text-gray-700 transition-colors"
-                          >
-                            {s}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  <button
-                    onClick={handleAnalyze}
-                    disabled={loading || !query.trim()}
-                    className="px-6 py-3.5 rounded-xl bg-gradient-to-r from-[#6c63ff] to-[#8b85ff] text-white font-medium hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    分析
-                  </button>
-                </div>
-
-                <div className="flex flex-wrap gap-2 mt-4 justify-center">
-                  {SUGGESTIONS.slice(0, 5).map((s) => (
-                    <button
-                      key={s}
-                      onClick={() => setQuery(s)}
-                      className="text-sm px-3 py-1.5 rounded-full bg-white border border-gray-100 text-gray-500 hover:border-[#6c63ff]/30 hover:text-[#6c63ff] transition-all shadow-sm"
-                    >
-                      试试：{s}
-                    </button>
-                  ))}
-                </div>
-              </div>
+            {item.personalitySummary ? (
+              <p className="text-[13px] text-bone-300 leading-[1.7] mt-1.5 line-clamp-2">
+                {item.personalitySummary}
+              </p>
             ) : (
-              <div className="max-w-lg mx-auto text-center">
-                <div className="bg-white rounded-2xl p-8 shadow-sm border border-gray-100">
-                  <div className="text-4xl mb-4">✍️</div>
-                  <h3 className="text-xl font-semibold text-gray-800 mb-2">
-                    渐进式人物构建
-                  </h3>
-                  <p className="text-gray-500 mb-6">
-                    通过多轮对话逐步描述身边人，AI将渐进式构建完整的人格画像
-                  </p>
-                  <button
-                    onClick={() => setShowBuildModal(true)}
-                    className="px-8 py-3 rounded-xl bg-gradient-to-r from-[#6c63ff] to-[#8b85ff] text-white font-medium hover:shadow-lg transition-all"
-                  >
-                    开始构建
-                  </button>
-                </div>
+              <p className="text-[12px] text-bone-600 mt-1.5">
+                尚无结论
+              </p>
+            )}
+
+            <div className="flex items-center gap-3 mt-2.5">
+              <MiniTraits traits={item.traits} />
+              <span className="text-[10px] text-bone-600 ml-auto shrink-0">
+                {formatDate(item.updatedAt || item.createdAt)}
+              </span>
+            </div>
+
+            {measured === 0 && (
+              <div className="mt-2 text-[11px] text-amber/70">
+                尚未完成有效研判
               </div>
             )}
           </div>
-        </section>
+        </div>
+      </Link>
 
-        {characters.length > 0 && (<section className="pb-16">
-            <div className="page-container">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-bold text-gray-900">
-                  我的人物库
-                  <span className="text-sm font-normal text-gray-400 ml-2">({filteredCharacters.length}/{characters.length})</span>
-                </h2>
-                <button
-                  onClick={loadCharacters}
-                  className="text-sm text-gray-400 hover:text-[#6c63ff] transition-colors"
-                >
-                  🔄 刷新
-                </button>
-              </div>
+      <button
+        onClick={(e) => {
+          e.preventDefault();
+          onDelete();
+        }}
+        className="absolute top-3 right-3 w-9 h-9 flex items-center justify-center rounded-full text-bone-600 hover:text-rose hover:bg-rose/10 transition-colors md:opacity-0 md:group-hover:opacity-100 focus:opacity-100"
+        aria-label={`删除 ${item.name}`}
+      >
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
+          <path d="M5 7h14M9 7V5h6v2M7 7l1 12h8l1-12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+    </div>
+  );
+}
 
-              {/* 搜索 / 筛选 / 排序 */}
-              <div className="flex flex-wrap items-center gap-3 mb-5">
-                <div className="relative flex-1 min-w-[180px] max-w-xs">
-                  <input
-                    type="text"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    placeholder="🔍 搜索角色名称..."
-                    className="w-full px-4 py-2 rounded-xl border border-gray-200 focus:border-[#6c63ff] focus:ring-2 focus:ring-[#6c63ff]/20 outline-none transition-all text-sm"
-                  />
-                </div>
+function SmallCard({
+  item,
+  onDelete,
+}: {
+  item: CharacterItem;
+  onDelete: () => void;
+}) {
+  const info = parse(item.basicInfo);
 
-                <div className="flex gap-1.5">
-                  {(["all", "WEB", "USER_BUILT"] as const).map((f) => (
-                    <button
-                      key={f}
-                      onClick={() => { setFilterSource(f); if (f !== "USER_BUILT") setFilterRelation("all"); }}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                        filterSource === f
-                          ? "bg-[#6c63ff] text-white shadow-sm"
-                          : "bg-gray-50 text-gray-500 hover:bg-gray-100 border border-gray-100"
-                      }`}
-                    >
-                      {f === "all" ? "全部" : f === "WEB" ? "🌐 公众人物" : "✍️ 自定义"}
-                    </button>
-                  ))}
-                </div>
-
-                {filterSource === "USER_BUILT" && allRelations.length > 0 && (
-                  <select
-                    value={filterRelation}
-                    onChange={(e) => setFilterRelation(e.target.value)}
-                    className="px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-100 bg-gray-50 text-gray-500 hover:bg-gray-100 outline-none transition-all cursor-pointer"
-                  >
-                    <option value="all">全部关系</option>
-                    {allRelations.map((r) => (
-                      <option key={r} value={r}>{r}</option>
-                    ))}
-                  </select>
-                )}
-
-                <select
-                  value={sortBy}
-                  onChange={(e) => setSortBy(e.target.value as any)}
-                  className="px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-100 bg-gray-50 text-gray-500 hover:bg-gray-100 outline-none transition-all cursor-pointer"
-                >
-                  <option value="newest">🕐 最新</option>
-                  <option value="oldest">🕐 最早</option>
-                  <option value="name">📝 名称</option>
-                  <option value="score">⭐ 评分</option>
-                </select>
-              </div>
-
-              {filteredCharacters.length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {filteredCharacters.map((c) => (
-                    <CharacterCard
-                      key={c.id}
-                      id={c.id}
-                      name={c.name}
-                      source={c.source}
-                      personalitySummary={c.personalitySummary}
-                      traits={c.traits}
-                      portraitUrl={c.portraitUrl}
-                      createdAt={c.createdAt}
-                      basicInfo={c.basicInfo}
-                      onDelete={handleDeleteCharacter}
-                    />
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-16 bg-white rounded-xl border border-gray-100">
-                  <div className="text-4xl mb-3 opacity-30">🔍</div>
-                  <p className="text-gray-400 text-sm">没有匹配的人物</p>
-                  <p className="text-gray-300 text-xs mt-1">试试调整搜索条件或筛选</p>
-                </div>
-              )}
+  return (
+    <div className="relative group">
+      <Link
+        href={`/character/${item.id}`}
+        className="surface p-4 press block h-full hover:border-white/[0.12] transition-colors"
+      >
+        <div className="flex items-start gap-3">
+          <Avatar item={item} size={34} />
+          <div className="min-w-0 flex-1">
+            <div className="text-[13.5px] text-bone-100 font-medium truncate">
+              {item.name}
             </div>
-          </section>)}
-
-        {characters.length === 0 && !loading && (
-          <section className="pb-16">
-            <div className="page-container">
-              <div className="text-center py-16">
-                <div className="text-6xl mb-4 opacity-30">🔍</div>
-                <p className="text-gray-400 text-lg">还没有分析过人物</p>
-                <p className="text-gray-300 text-sm mt-1">输入公众人物姓名或点击&ldquo;自定义人物&rdquo;开始</p>
-              </div>
+            <div className="text-[11px] text-bone-600 truncate mt-0.5">
+              {info?.relationship || (item.source === "WEB" ? "公众人物" : "身边人")}
             </div>
-          </section>
+          </div>
+        </div>
+
+        {item.personalitySummary && (
+          <p className="text-[12px] text-bone-400 leading-[1.65] mt-2.5 line-clamp-2">
+            {item.personalitySummary}
+          </p>
         )}
 
-        <footer className="border-t border-gray-100 py-6">
-          <div className="page-container text-center">
-            <p className="text-xs text-gray-400">
-              AI分析仅供参考，真实的人是多变的
-            </p>
-            <p className="text-xs text-gray-400 mt-1">
-              建议结合现实观察，不要完全依赖分析做决定
-            </p>
-          </div>
-        </footer>
-      </main>
+        <div className="mt-3">
+          <MiniTraits traits={item.traits} />
+        </div>
+      </Link>
 
-      <BuildCharacterModal
-        visible={showBuildModal}
-        onClose={() => setShowBuildModal(false)}
-        onComplete={handleBuildComplete}
-      />
-    </>
+      <button
+        onClick={(e) => {
+          e.preventDefault();
+          onDelete();
+        }}
+        className="absolute top-2.5 right-2.5 w-8 h-8 flex items-center justify-center rounded-full text-bone-600 hover:text-rose hover:bg-rose/10 transition-all md:opacity-0 md:group-hover:opacity-100"
+        aria-label={`删除 ${item.name}`}
+      >
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none">
+          <path d="M5 7h14M9 7V5h6v2M7 7l1 12h8l1-12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+    </div>
   );
+}
+
+/** 用极简的九段条表现人格轮廓，比"标签"更能传达形状 */
+function MiniTraits({ traits }: { traits: any }) {
+  const arr = parseTraits(traits);
+  if (arr.length === 0) return null;
+
+  const ordered = [
+    "OPENNESS",
+    "CONSCIENTIOUSNESS",
+    "EXTRAVERSION",
+    "AGREEABLENESS",
+    "NEUROTICISM",
+    "DECISIVENESS",
+    "RISK_TENDENCY",
+    "EMPATHY",
+    "LEADERSHIP",
+  ];
+
+  return (
+    <div className="flex items-end gap-[3px] h-5" aria-hidden>
+      {ordered.map((code) => {
+        const t = arr.find((x: any) => x.code === code);
+        const measured = t && t.measured !== false && (t.confidence ?? 0) >= 30;
+        const h = measured ? Math.max(3, ((t.score ?? 0) / 100) * 20) : 2;
+        return (
+          <span
+            key={code}
+            className="w-[3px] rounded-full"
+            style={{
+              height: h,
+              background: measured
+                ? "rgba(217,167,92,0.75)"
+                : "rgba(255,255,255,0.1)",
+            }}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+function Avatar({ item, size }: { item: CharacterItem; size: number }) {
+  const valid =
+    item.portraitUrl && !item.portraitUrl.includes("dicebear.com");
+
+  if (valid) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={item.portraitUrl!}
+        alt=""
+        className="rounded-xl object-cover shrink-0 border border-white/10"
+        style={{ width: size, height: size }}
+      />
+    );
+  }
+
+  return (
+    <div
+      className="rounded-xl shrink-0 flex items-center justify-center border border-white/10 bg-ink-750 text-bone-200"
+      style={{ width: size, height: size, fontSize: size * 0.4 }}
+    >
+      <span className="font-display">{item.name.charAt(0)}</span>
+    </div>
+  );
+}
+
+function SectionLabel({ label, inline }: { label: string; inline?: boolean }) {
+  return (
+    <div className={`flex items-center gap-2.5 ${inline ? "" : "mb-3"}`}>
+      <span className="text-[11px] tracking-[0.2em] uppercase text-bone-500">
+        {label}
+      </span>
+      {!inline && <div className="flex-1 h-px bg-white/[0.06]" />}
+    </div>
+  );
+}
+
+function Arrow() {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      className="text-bone-600 group-hover:text-amber transition-colors shrink-0 mt-1"
+      aria-hidden
+    >
+      <path d="M7 17 17 7M9 7h8v8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function SearchIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      className="absolute left-4 top-1/2 -translate-y-1/2 text-bone-600 pointer-events-none"
+    >
+      <circle cx="11" cy="11" r="6.5" stroke="currentColor" strokeWidth="1.5" />
+      <path d="m16 16 4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function LoadingSkeleton() {
+  return (
+    <div className="shell pt-10 space-y-4">
+      <div className="h-8 w-48 rounded-lg bg-white/[0.04] animate-pulse" />
+      <div className="grid gap-3 md:grid-cols-2">
+        <div className="h-24 rounded-2xl bg-white/[0.03] animate-pulse" />
+        <div className="h-24 rounded-2xl bg-white/[0.03] animate-pulse" />
+      </div>
+      <div className="space-y-2.5">
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="h-28 rounded-2xl bg-white/[0.025] animate-pulse" />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ── 工具 ── */
+
+function parse(v: any) {
+  if (!v) return null;
+  if (typeof v === "object") return v;
+  try {
+    return JSON.parse(v);
+  } catch {
+    return null;
+  }
+}
+
+function parseTraits(v: any): any[] {
+  const parsed = parse(v);
+  return Array.isArray(parsed) ? parsed : [];
+}
+
+function measuredCount(v: any): number {
+  return parseTraits(v).filter(
+    (t: any) => t.measured !== false && (t.confidence ?? 0) >= 30
+  ).length;
+}
+
+function formatDate(iso: string) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const now = new Date();
+  const diff = (now.getTime() - d.getTime()) / 86400000;
+  if (diff < 1) return "今天";
+  if (diff < 2) return "昨天";
+  if (diff < 30) return `${Math.floor(diff)} 天前`;
+  return d.toLocaleDateString("zh-CN", { month: "short", day: "numeric" });
 }

@@ -48,6 +48,7 @@ export async function GET(
         keyEvents: safeJson(character.keyEvents),
         achievements: safeJson(character.achievements),
         confidenceScores: safeJson(character.confidenceScores),
+        analysisProfile: safeJson(character.analysisProfile),
         buildSession: character.buildSession
           ? {
               ...character.buildSession,

@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, type ReactNode } from "react";
 import { useAuthStore } from "@/store/auth";
 import { httpGet } from "@/lib/http";
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
+export function AuthProvider({ children }: { children: ReactNode }) {
   const { setAuth, token } = useAuthStore();
 
   useEffect(() => {
