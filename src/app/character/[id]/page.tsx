@@ -6,7 +6,11 @@ import Link from "next/link";
 import { useAuthStore } from "@/store/auth";
 import { httpGet, httpPost } from "@/lib/http";
 import type { AnalysisProfile } from "@/lib/analysis/types";
-import { ProfileView } from "@/components/profile/ProfileView";
+import {
+  ProfilePartView,
+  PROFILE_PARTS,
+  type ProfilePart,
+} from "@/components/profile/ProfileView";
 import { RadarChart } from "@/components/profile/RadarChart";
 
 /**
@@ -23,7 +27,7 @@ import { RadarChart } from "@/components/profile/RadarChart";
 const SECTIONS = [
   { key: "profile", label: "研判" },
   { key: "read", label: "读意图" },
-  { key: "simulate", label: "对话" },
+  { key: "simulate", label: "行动" },
   { key: "history", label: "记录" },
 ] as const;
 
@@ -38,6 +42,10 @@ export default function CharacterPage() {
   const [character, setCharacter] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [section, setSection] = useState<SectionKey>("profile");
+  // 研判栏内再分 7 个模块，避免一条长页滚到底
+  const [part, setPart] = useState<ProfilePart>("thesis");
+  // 画像全屏预览
+  const [previewing, setPreviewing] = useState(false);
 
   useEffect(() => {
     if (!isAuthenticated()) {
@@ -72,8 +80,8 @@ export default function CharacterPage() {
   if (loading) {
     return (
       <div className="shell pt-10">
-        <div className="h-6 w-32 rounded bg-white/[0.04] animate-pulse mb-4" />
-        <div className="h-40 rounded-2xl bg-white/[0.03] animate-pulse" />
+        <div className="h-6 w-32 rounded bg-[var(--chip-bg)] animate-pulse mb-4" />
+        <div className="h-40 rounded-2xl bg-[var(--glass-2)] animate-pulse" />
       </div>
     );
   }
@@ -100,7 +108,12 @@ export default function CharacterPage() {
 
         <div className="flex items-start gap-4">
           <div className="shrink-0">
-            <Avatar character={character} size={56} mdSize={68} />
+            <Avatar
+              character={character}
+              size={56}
+              mdSize={68}
+              onPreview={() => setPreviewing(true)}
+            />
             <PortraitButton
               characterId={character.id}
               hasPortrait={Boolean(
@@ -162,12 +175,13 @@ export default function CharacterPage() {
 
       {/* ═══ 分段导航 ═══ */}
       <div
-        className="sticky z-20 mt-5 border-y border-white/[0.06]"
+        className="sticky z-20 mt-5 top-[calc(56px+var(--safe-top))] md:top-0"
         style={{
-          top: "var(--safe-top)",
-          background: "rgba(7,8,11,0.9)",
-          backdropFilter: "blur(16px)",
-          WebkitBackdropFilter: "blur(16px)",
+          background: "color-mix(in srgb, var(--bg-base) 88%, transparent)",
+          borderTop: "1px solid var(--hairline)",
+          borderBottom: "1px solid var(--hairline)",
+          backdropFilter: "blur(18px) saturate(1.4)",
+          WebkitBackdropFilter: "blur(18px) saturate(1.4)",
         }}
       >
         <div className="shell">
@@ -198,6 +212,8 @@ export default function CharacterPage() {
           <ProfileSection
             character={character}
             profile={profile}
+            part={part}
+            onPartChange={setPart}
             onRetry={() => router.push("/explore")}
           />
         )}
@@ -209,6 +225,98 @@ export default function CharacterPage() {
           <HistorySection character={character} onUpdated={load} />
         )}
       </div>
+
+      {previewing && (
+        <PortraitLightbox
+          src={character.portraitUrl}
+          name={character.name}
+          onClose={() => setPreviewing(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * 画像全屏预览
+ *
+ * 头像只有 56px，看不清细节。点击后铺满视口，
+ * 支持点背景关闭、Esc 关闭，并阻止背景滚动。
+ */
+function PortraitLightbox({
+  src,
+  name,
+  onClose,
+}: {
+  src: string;
+  name: string;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+
+    // 锁滚动，避免背景跟手滑动
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center p-4"
+      style={{ background: "rgba(0,0,0,0.88)", backdropFilter: "blur(8px)" }}
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-label={`${name} 的画像`}
+    >
+      <button
+        onClick={onClose}
+        className="absolute top-4 right-4 w-10 h-10 rounded-full flex items-center justify-center text-white/80 hover:text-white press"
+        style={{ background: "rgba(255,255,255,0.12)" }}
+        aria-label="关闭"
+        // 关闭按钮单独处理，避免和背景点击重复触发
+        onClickCapture={(e) => e.stopPropagation()}
+      >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+          <path d="m6 6 12 12M18 6 6 18" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+        </svg>
+      </button>
+
+      <div
+        className="max-w-full max-h-full flex flex-col items-center gap-3"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={src}
+          alt={`${name} 的画像`}
+          className="rounded-2xl object-contain rise"
+          style={{
+            maxWidth: "min(92vw, 560px)",
+            maxHeight: "76vh",
+            boxShadow: "0 30px 80px -20px rgba(0,0,0,0.9)",
+          }}
+        />
+        <p className="text-[12px] text-white/55">{name}</p>
+        <a
+          href={src}
+          download={`${name}.png`}
+          target="_blank"
+          rel="noreferrer"
+          className="px-4 min-h-[36px] rounded-lg text-[12px] text-white/80 flex items-center"
+          style={{ background: "rgba(255,255,255,0.12)" }}
+        >
+          保存图片
+        </a>
+      </div>
     </div>
   );
 }
@@ -218,10 +326,14 @@ export default function CharacterPage() {
 function ProfileSection({
   character,
   profile,
+  part,
+  onPartChange,
   onRetry,
 }: {
   character: any;
   profile: AnalysisProfile | null;
+  part: ProfilePart;
+  onPartChange: (p: ProfilePart) => void;
   onRetry: () => void;
 }) {
   const traits = useMemo(() => {
@@ -252,31 +364,76 @@ function ProfileSection({
   }
 
   return (
-    <div className="space-y-8">
-      {/* 雷达轮廓 —— 只在有有效数据时显示 */}
-      {hasMeasured && (
-        <div className="surface p-4 md:p-6">
-          <div className="flex items-baseline gap-2 mb-3">
-            <h2 className="font-display text-[17px] text-bone-50">人格轮廓</h2>
-            <span className="text-[10px] uppercase tracking-[0.2em] text-bone-600">
-              Shape
-            </span>
+    <div>
+      {/* ── 档案内分区导航 ── */}
+      <div className="flex scroll-x no-scrollbar gap-1.5 pb-4 -mx-1 px-1">
+        {PROFILE_PARTS.map((p) => {
+          const active = part === p.key;
+          return (
+            <button
+              key={p.key}
+              onClick={() => onPartChange(p.key)}
+              className={`shrink-0 px-3.5 min-h-[36px] rounded-full text-[12.5px] transition-all press ${
+                active ? "font-medium" : ""
+              }`}
+              style={
+                active
+                  ? {
+                      color: "var(--accent)",
+                      background:
+                        "color-mix(in srgb, var(--accent) 12%, transparent)",
+                      border:
+                        "1px solid color-mix(in srgb, var(--accent) 30%, transparent)",
+                    }
+                  : {
+                      color: "var(--fg-4)",
+                      background: "var(--chip-bg)",
+                      border: "1px solid var(--border-1)",
+                    }
+              }
+              aria-pressed={active}
+            >
+              {p.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* ── 分区标题 ── */}
+      <p className="text-[11.5px] text-bone-500 mb-4 leading-relaxed">
+        {PROFILE_PARTS.find((p) => p.key === part)?.hint}
+      </p>
+
+      <div className="space-y-8">
+        {/* 雷达轮廓随「特质」板块一起看 */}
+        {part === "traits" && hasMeasured && (
+          <div className="surface p-4 md:p-6">
+            <div className="flex items-baseline gap-2 mb-3">
+              <h2 className="font-display text-[17px] text-bone-50">
+                {profile?.meta?.domainName || "人格轮廓"}
+              </h2>
+              <span className="text-[10px] uppercase tracking-[0.2em] text-bone-600">
+                Shape
+              </span>
+            </div>
+            <RadarChart data={traits.filter((t: any) => t.measured)} />
           </div>
-          <RadarChart data={traits.filter((t: any) => t.measured)} />
-        </div>
-      )}
+        )}
 
-      <ProfileView profile={profile} />
+        <ProfilePartView profile={profile} part={part} />
 
-      <FeedbackBar characterId={character.id} />
+        {/* 生平与成就只在「结论」板块展示，避免每页都拖长 */}
+        {part === "thesis" &&
+          profile.keyEvents &&
+          profile.keyEvents.length > 0 && (
+            <PublicBiography
+              events={profile.keyEvents}
+              achievements={profile.achievements || []}
+            />
+          )}
 
-      {/* 公众人物的生平与成就 */}
-      {profile.keyEvents && profile.keyEvents.length > 0 && (
-        <PublicBiography
-          events={profile.keyEvents}
-          achievements={profile.achievements || []}
-        />
-      )}
+        {part === "thesis" && <FeedbackBar characterId={character.id} />}
+      </div>
     </div>
   );
 }
@@ -495,7 +652,7 @@ function IntentResult({ result }: { result: any }) {
                   </div>
                 </div>
               </summary>
-              <div className="px-4 pb-4 space-y-2 border-t border-white/[0.06] pt-3">
+              <div className="px-4 pb-4 space-y-2 border-t border-[var(--hairline)] pt-3">
                 {h.supporting?.length > 0 && (
                   <div>
                     <div className="text-[10px] text-jade/70 mb-1">支持</div>
@@ -517,7 +674,7 @@ function IntentResult({ result }: { result: any }) {
                   </div>
                 )}
                 {h.falsifier && (
-                  <p className="text-[11.5px] text-bone-400 bg-white/[0.03] rounded px-2.5 py-2">
+                  <p className="text-[11.5px] text-bone-400 bg-[var(--glass-2)] rounded px-2.5 py-2">
                     <span className="text-amber/70">证伪：</span>
                     {h.falsifier}
                   </p>
@@ -529,7 +686,7 @@ function IntentResult({ result }: { result: any }) {
       )}
 
       {result.whatWouldTell && (
-        <div className="surface p-4 border-l-2" style={{ borderLeftColor: "rgba(217,167,92,0.4)" }}>
+        <div className="surface p-4 border-l-2" style={{ borderLeftColor: "rgba(94,240,224,0.42)" }}>
           <div className="text-[11px] tracking-[0.16em] uppercase text-amber/80 mb-2">
             还需要观察什么
           </div>
@@ -606,8 +763,8 @@ function IntentSkeleton() {
           style={{ animationDelay: `${i * 120}ms` }}
         >
           <div className="h-3 w-24 rounded bg-white/[0.06] mb-3" />
-          <div className="h-3 w-full rounded bg-white/[0.04] mb-2" />
-          <div className="h-3 w-4/5 rounded bg-white/[0.04]" />
+          <div className="h-3 w-full rounded bg-[var(--chip-bg)] mb-2" />
+          <div className="h-3 w-4/5 rounded bg-[var(--chip-bg)]" />
         </div>
       ))}
     </div>
@@ -628,7 +785,7 @@ function SimulateSection({ character }: { character: any }) {
         <p className="text-[12.5px] text-bone-400 leading-relaxed mb-5">
           以 TA 的思维方式回应你。同时可以展开看这句话背后的心理机制。
         </p>
-        <Link href={`/simulate/${character.id}`} className="btn-primary w-full">
+        <Link href={`/chat/${character.id}`} className="btn-primary w-full">
           进入对话
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
             <path d="M5 12h14m-6-6 6 6-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
@@ -725,7 +882,7 @@ function CounterfactualPanel({ character }: { character: any }) {
       )}
 
       {result && (
-        <div className="mt-4 pt-4 border-t border-white/[0.07] space-y-3 rise">
+        <div className="mt-4 pt-4 border-t border-[var(--border-1)] space-y-3 rise">
           <div className="flex items-center gap-3">
             <span className="text-[12px] text-bone-500">转变把握</span>
             <div className="flex-1 h-1.5 rounded-full bg-white/[0.07] overflow-hidden">
@@ -733,7 +890,7 @@ function CounterfactualPanel({ character }: { character: any }) {
                 className="h-full rounded-full"
                 style={{
                   width: `${result.probability}%`,
-                  background: "linear-gradient(90deg,#a97c3c,#edc07a)",
+                  background: "linear-gradient(90deg,#12867c,#5ef0e0)",
                 }}
               />
             </div>
@@ -892,10 +1049,12 @@ function Avatar({
   character,
   size,
   mdSize,
+  onPreview,
 }: {
   character: any;
   size: number;
   mdSize?: number;
+  onPreview?: () => void;
 }) {
   const valid =
     character.portraitUrl && !character.portraitUrl.includes("dicebear.com");
@@ -903,19 +1062,35 @@ function Avatar({
 
   if (valid) {
     return (
-      // eslint-disable-next-line @next/next/no-img-element
-      <img
-        src={character.portraitUrl}
-        alt=""
-        className="rounded-2xl object-cover shrink-0 border border-white/10"
+      <button
+        onClick={onPreview}
+        className="relative rounded-2xl overflow-hidden shrink-0 press group"
         style={{ width: size, height: size }}
-      />
+        aria-label="查看大图"
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={character.portraitUrl}
+          alt=""
+          className="w-full h-full object-cover border border-[var(--border-2)] rounded-2xl"
+        />
+        {/* 放大提示：不点也能看出可以点 */}
+        <span
+          className="absolute inset-0 flex items-center justify-center rounded-2xl opacity-0 group-hover:opacity-100 group-active:opacity-100 transition-opacity"
+          style={{ background: "rgba(0,0,0,0.42)" }}
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className="text-white">
+            <circle cx="11" cy="11" r="6.5" stroke="currentColor" strokeWidth="1.6" />
+            <path d="m16 16 4 4M11 8.5v5M8.5 11h5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+          </svg>
+        </span>
+      </button>
     );
   }
 
   return (
     <div
-      className="rounded-2xl shrink-0 flex items-center justify-center border border-white/10 bg-ink-750 text-bone-200"
+      className="rounded-2xl shrink-0 flex items-center justify-center border border-[var(--border-2)] bg-ink-750 text-bone-200"
       style={{ width: size, height: size }}
     >
       <span className="font-display" style={{ fontSize: s * 0.42 }}>
@@ -935,7 +1110,15 @@ function parse(v: any) {
   }
 }
 
-/** 生成画像按钮：放在头像下方，无图时提示可生成 */
+/**
+ * 生成画像按钮
+ *
+ * 关键修复：画像生成要几十秒，旧版点击后只有按钮文字变化，用户看不到任何反馈，
+ * 容易当成卡死而离开页面，结果生成白白中断。
+ *
+ * 现在：点击立即出现带进度条的面板 + 分阶段的提示语 + 预计耗时，
+ * 并在生成期间拦截路由离开（beforeunload），避免误操作导致白等。
+ */
 function PortraitButton({
   characterId,
   hasPortrait,
@@ -946,31 +1129,116 @@ function PortraitButton({
   onGenerated: (url: string) => void;
 }) {
   const [loading, setLoading] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+  const [error, setError] = useState("");
 
-  async function generate() {
+  // 生成期间按秒计时，让用户知道系统在动
+  useEffect(() => {
+    if (!loading) return;
+    setElapsed(0);
+    const t = setInterval(() => setElapsed((e) => e + 1), 1000);
+    return () => clearInterval(t);
+  }, [loading]);
+
+  // 生成期间离开页面会丢失结果，给出原生二次确认
+  useEffect(() => {
+    if (!loading) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [loading]);
+
+  async function generate(force = false) {
     if (loading) return;
+    setError("");
     setLoading(true);
     try {
       const res = await httpPost<{ portraitUrl: string }>(
         "/api/character/generate-portrait",
-        { characterId }
+        // force 让服务端跳过缓存，否则已有画像时会直接返回旧的，
+        // 用户改了画风也看不到变化
+        { characterId, force }
       );
       if (res?.portraitUrl) onGenerated(res.portraitUrl);
     } catch (e: any) {
-      alert(e.message || "生成失败");
+      setError(e.message || "生成失败，请重试");
     } finally {
       setLoading(false);
     }
   }
 
+  const STAGES = [
+    { at: 0, text: "正在读取人格档案……" },
+    { at: 6, text: "正在构思视觉形象……" },
+    { at: 18, text: "正在绘制细节……" },
+    { at: 35, text: "即将完成，请稍候……" },
+  ];
+  const stage = [...STAGES].reverse().find((s) => elapsed >= s.at) || STAGES[0];
+  // 20 秒左右通常出图；超过 60 秒就不敢再给了
+  const pct = Math.min(94, Math.round((elapsed / 25) * 100));
+
+  if (loading) {
+    return (
+      <div className="mt-2 w-40 md:w-44 rise">
+        <div className="surface p-2.5">
+          <div className="flex items-center gap-2 mb-2">
+            <span
+              className="w-1.5 h-1.5 rounded-full blink shrink-0"
+              style={{ background: "var(--accent)" }}
+            />
+            <span className="text-[10.5px] text-bone-300 truncate">
+              {stage.text}
+            </span>
+          </div>
+          <div className="h-[3px] rounded-full overflow-hidden relative" style={{ background: "var(--hairline)" }}>
+            <div
+              className="h-full rounded-full transition-all duration-1000 ease-out"
+              style={{
+                width: `${pct}%`,
+                background: "linear-gradient(90deg, var(--accent-deep), var(--accent))",
+              }}
+            />
+          </div>
+          <div className="flex items-center justify-between mt-1.5">
+            <span className="text-[9.5px] text-bone-600 numeral">{elapsed}s</span>
+            <span className="text-[9.5px] text-bone-600">请勿离开此页</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <button
-      onClick={generate}
-      disabled={loading}
-      className="mt-1.5 w-full text-[10px] text-bone-500 hover:text-amber/90 transition-colors py-1"
-    >
-      {loading ? "生成中…" : hasPortrait ? "重新生成" : "生成画像"}
-    </button>
+    <div className="mt-1.5 w-40 md:w-44">
+      <button
+        onClick={() => generate(hasPortrait)}
+        className="w-full min-h-[34px] rounded-lg text-[10.5px] transition-colors flex items-center justify-center gap-1.5"
+        style={{
+          color: "var(--fg-4)",
+          background: "var(--chip-bg)",
+          border: "1px solid var(--border-1)",
+        }}
+      >
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden>
+          <path
+            d="M20 11a8 8 0 1 0-.9 4.2M20 5v6h-6"
+            stroke="currentColor"
+            strokeWidth="1.7"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+        {hasPortrait ? "重新生成" : "生成画像"}
+      </button>
+      {error && (
+        <p className="text-[9.5px] text-rose leading-tight mt-0.5 text-center">
+          {error}
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -1026,7 +1294,7 @@ function FeedbackBar({ characterId }: { characterId: number }) {
                 }
                 submit(key);
               }}
-              className="min-h-[44px] rounded-xl border border-white/[0.08] text-[12.5px] text-bone-300 hover:border-white/[0.16] hover:text-bone-100 transition-colors"
+              className="min-h-[44px] rounded-xl border border-[var(--border-2)] text-[12.5px] text-bone-300 hover:border-[var(--border-hi)] hover:text-bone-100 transition-colors"
             >
               {label}
             </button>

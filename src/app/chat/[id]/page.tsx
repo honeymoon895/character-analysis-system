@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback, type ReactNode } from "react";
 import { useParams, useRouter } from "next/navigation";
+import Link from "next/link";
 import { useAuthStore } from "@/store/auth";
 import { httpGet, httpPost, httpPatch } from "@/lib/http";
 
@@ -49,15 +50,7 @@ export default function SimulationPage() {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages, sending]);
 
-  useEffect(() => {
-    if (!isAuthenticated()) {
-      router.push("/login");
-      return;
-    }
-    init();
-  }, []);
-
-  async function init() {
+  const init = useCallback(async () => {
     try {
       const res = await httpGet(`/api/character/${params.id}`);
       setCharacter(res.character);
@@ -75,7 +68,15 @@ export default function SimulationPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [params.id]);
+
+  useEffect(() => {
+    if (!isAuthenticated()) {
+      router.push("/login");
+      return;
+    }
+    init();
+  }, [init]);
 
   const send = useCallback(async () => {
     const text = input.trim();
@@ -178,27 +179,31 @@ export default function SimulationPage() {
   if (loading) {
     return (
       <div className="shell pt-10">
-        <div className="h-14 rounded-2xl bg-white/[0.03] animate-pulse" />
+        <div className="h-14 rounded-2xl bg-[var(--glass-2)] animate-pulse" />
       </div>
     );
   }
   if (!character) return null;
 
   return (
-    <div className="flex flex-col h-dvh md:h-dvh">
+    <div
+      className="flex flex-col md:h-dvh"
+      style={{ height: "calc(100dvh - 76px - var(--safe-bottom))" }}
+    >
       {/* ═══ 顶栏 ═══ */}
       <div
-        className="shrink-0 border-b border-white/[0.06]"
+        className="shrink-0"
         style={{
-          background: "rgba(7,8,11,0.86)",
-          backdropFilter: "blur(16px)",
-          WebkitBackdropFilter: "blur(16px)",
+          background: "color-mix(in srgb, var(--bg-base) 88%, transparent)",
+          borderBottom: "1px solid var(--hairline)",
+          backdropFilter: "blur(18px) saturate(1.4)",
+          WebkitBackdropFilter: "blur(18px) saturate(1.4)",
           paddingTop: "var(--safe-top)",
         }}
       >
         <div className="shell h-14 flex items-center gap-3">
           <button
-            onClick={() => router.push(`/character/${character.id}`)}
+            onClick={() => router.push(`/chat`)}
             className="w-9 h-9 -ml-2 rounded-full flex items-center justify-center text-bone-400 hover:text-bone-100 transition-colors"
             aria-label="返回"
           >
@@ -207,26 +212,49 @@ export default function SimulationPage() {
             </svg>
           </button>
 
-          <div className="w-9 h-9 rounded-full overflow-hidden shrink-0 border border-white/10 bg-ink-750 flex items-center justify-center">
-            {character.portraitUrl &&
-            !character.portraitUrl.includes("dicebear.com") ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={character.portraitUrl} alt="" className="w-full h-full object-cover" />
-            ) : (
-              <span className="font-display text-[13px] text-bone-200">
-                {character.name.charAt(0)}
-              </span>
-            )}
-          </div>
+          {/* 头像与名字都可点击，直接进入完整分析档案 */}
+          <Link
+            href={`/character/${character.id}`}
+            className="flex items-center gap-2.5 min-w-0 flex-1 press rounded-full -ml-1 pl-1 pr-2 py-1"
+            aria-label={`查看 ${character.name} 的完整分析`}
+          >
+            <div className="w-9 h-9 rounded-full overflow-hidden shrink-0 border border-[var(--border-2)] bg-ink-750 flex items-center justify-center">
+              {character.portraitUrl &&
+              !character.portraitUrl.includes("dicebear.com") ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={character.portraitUrl} alt="" className="w-full h-full object-cover" />
+              ) : (
+                <span className="font-display text-[13px] text-bone-200">
+                  {character.name.charAt(0)}
+                </span>
+              )}
+            </div>
 
-          <div className="min-w-0 flex-1">
-            <div className="text-[14px] text-bone-50 truncate">
-              {character.name}
+            <div className="min-w-0 flex-1">
+              <div className="text-[14px] text-bone-50 truncate flex items-center gap-1">
+                {character.name}
+                <svg
+                  width="11"
+                  height="11"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  className="text-bone-600 shrink-0"
+                  aria-hidden
+                >
+                  <path
+                    d="m9 6 6 6-6 6"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </div>
+              <div className="text-[10.5px] text-bone-500">
+                {sending ? "正在回应…" : "查看完整分析"}
+              </div>
             </div>
-            <div className="text-[10.5px] text-bone-500">
-              {sending ? "正在回应…" : "模拟对话"}
-            </div>
-          </div>
+          </Link>
 
           <button
             onClick={newChat}
@@ -242,7 +270,7 @@ export default function SimulationPage() {
         <div className="shell py-5 max-w-2xl">
           {messages.length === 0 && (
             <div className="text-center py-16">
-              <div className="w-16 h-16 mx-auto mb-5 rounded-full border border-white/10 flex items-center justify-center breathe">
+              <div className="w-16 h-16 mx-auto mb-5 rounded-full border border-[var(--border-2)] flex items-center justify-center breathe">
                 <span className="w-1.5 h-1.5 rounded-full bg-amber/70" />
               </div>
               <h2 className="font-display text-[17px] text-bone-100 mb-2">
@@ -279,11 +307,12 @@ export default function SimulationPage() {
 
       {/* ═══ 输入区 ═══ */}
       <div
-        className="shrink-0 border-t border-white/[0.06]"
+        className="shrink-0"
         style={{
-          background: "rgba(11,13,17,0.95)",
-          backdropFilter: "blur(16px)",
-          WebkitBackdropFilter: "blur(16px)",
+          background: "color-mix(in srgb, var(--bg-base) 92%, transparent)",
+          borderTop: "1px solid var(--hairline)",
+          backdropFilter: "blur(18px) saturate(1.4)",
+          WebkitBackdropFilter: "blur(18px) saturate(1.4)",
           paddingBottom: "var(--safe-bottom)",
         }}
       >
@@ -313,7 +342,7 @@ export default function SimulationPage() {
               disabled={sending || !input.trim()}
               className="w-12 h-12 rounded-full shrink-0 flex items-center justify-center text-[#16110a] transition-transform active:scale-95 disabled:opacity-35"
               style={{
-                background: "linear-gradient(180deg,#edc07a,#d9a75c)",
+                background: "linear-gradient(180deg,#7ef7ea,#2ed3c4)",
               }}
               aria-label="发送"
             >
@@ -335,7 +364,7 @@ function UserBubble({ content }: { content: string }) {
     <div className="flex justify-end">
       <div
         className="max-w-[82%] px-4 py-3 rounded-2xl rounded-br-md text-[14px] leading-[1.65] text-bone-50"
-        style={{ background: "rgba(255,255,255,0.07)" }}
+        style={{ background: "color-mix(in srgb, var(--fg-strong) 8%, transparent)" }}
       >
         <p className="whitespace-pre-wrap break-words">{content}</p>
       </div>
@@ -363,7 +392,7 @@ function AssistantBubble({
 
   return (
     <div className="flex gap-2.5">
-      <div className="w-8 h-8 rounded-full overflow-hidden shrink-0 border border-white/10 bg-ink-750 flex items-center justify-center mt-0.5">
+      <div className="w-8 h-8 rounded-full overflow-hidden shrink-0 border border-[var(--border-2)] bg-ink-750 flex items-center justify-center mt-0.5">
         {character.portraitUrl &&
         !character.portraitUrl.includes("dicebear.com") ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -379,8 +408,8 @@ function AssistantBubble({
         <div
           className="px-4 py-3 rounded-2xl rounded-tl-md text-[14px] leading-[1.68] text-bone-50"
           style={{
-            background: "rgba(255,255,255,0.045)",
-            border: "1px solid rgba(255,255,255,0.06)",
+            background: "var(--chip-bg)",
+            border: "1px solid var(--border-1)",
           }}
         >
           <p className="whitespace-pre-wrap break-words">
@@ -497,7 +526,7 @@ function AnalysisCard({
 function TypingIndicator({ character }: { character: any }) {
   return (
     <div className="flex gap-2.5">
-      <div className="w-8 h-8 rounded-full shrink-0 border border-white/10 bg-ink-750 flex items-center justify-center">
+      <div className="w-8 h-8 rounded-full shrink-0 border border-[var(--border-2)] bg-ink-750 flex items-center justify-center">
         <span className="font-display text-[11px] text-bone-200">
           {character.name.charAt(0)}
         </span>
@@ -505,8 +534,8 @@ function TypingIndicator({ character }: { character: any }) {
       <div
         className="px-4 py-3.5 rounded-2xl rounded-tl-md"
         style={{
-          background: "rgba(255,255,255,0.045)",
-          border: "1px solid rgba(255,255,255,0.06)",
+          background: "var(--chip-bg)",
+          border: "1px solid var(--border-1)",
         }}
       >
         <div className="flex gap-1.5">

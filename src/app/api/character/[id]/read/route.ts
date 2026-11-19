@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireAuth } from "@/lib/api";
 import { readIntent } from "@/lib/analysis/engine";
+import { loadUserAIConfig } from "@/lib/ai/config-server";
 import { emptyAnalysis, type AnalysisProfile } from "@/lib/analysis/types";
 
 /**
@@ -33,7 +34,8 @@ export async function POST(
       safeJson(character.analysisProfile) ||
       emptyAnalysis("该人物尚未完成人格研判");
 
-    const result = await readIntent(profile, String(situation));
+    const aiConfig = await loadUserAIConfig(user.userId);
+    const result = await readIntent(profile, String(situation), aiConfig);
 
     if (!result) {
       return NextResponse.json(

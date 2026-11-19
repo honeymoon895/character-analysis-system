@@ -5,12 +5,14 @@ import {
   createVideoTask,
   waitForVideo,
   durationToFrames,
-  maxSegmentDuration,
   rewriteVideoPrompt,
+  maxSegmentSecondsFor,
 } from "@/lib/ai";
 import { stitchVideos, generateVideoFileName } from "@/lib/video/stitch";
+import { mediaSupport } from "@/lib/ai/config";
+import { loadUserAIConfig } from "@/lib/ai/config-server";
 
-const MAX_SEGMENT_SECONDS = maxSegmentDuration(); // ~18s
+
 
 export async function POST(request: NextRequest) {
   try {
@@ -25,6 +27,29 @@ export async function POST(request: NextRequest) {
 
     if (!prompt?.trim()) {
       return NextResponse.json({ error: "请输入场景描述" }, { status: 400 });
+    }
+
+    // 关键修复：使用当前用户的配置。之前读的是服务端环境变量，
+    // 用户在「我的 → AI 引擎」填的 key 完全没被用上。
+    const aiConfig = await loadUserAIConfig(authUser.userId);
+
+    if (!aiConfig) {
+      return NextResponse.json(
+        { error: "未配置 AI 服务。请到「我的 → AI 引擎」填写密钥。" },
+        { status: 400 }
+      );
+    }
+
+    // 明确告知：对话模型不能出视频，别让用户白等
+    const support = mediaSupport(aiConfig);
+    if (!support.video) {
+      return NextResponse.json(
+        {
+          error: `当前服务商不支持视频生成。${support.note}`,
+          unsupported: true,
+        },
+        { status: 400 }
+      );
     }
 
     if (duration < 1 || duration > 120) {
@@ -53,19 +78,25 @@ export async function POST(request: NextRequest) {
       referenceImages.push(characterImage);
     }
 
+    // 单段上限随模型而定：agnes-video-2.5 最长 12 秒，旧版约 18 秒
+    const maxSeg = maxSegmentSecondsFor(aiConfig);
+
     // ─── 短视频：直接生成 ─────────────────────────
-    if (duration <= MAX_SEGMENT_SECONDS) {
+    if (duration <= maxSeg) {
       const numFrames = durationToFrames(duration);
-      const safePrompt = await rewriteVideoPrompt(prompt);
+      const safePrompt = await rewriteVideoPrompt(prompt, aiConfig);
       const promptWithStyle = buildVideoPrompt(safePrompt, referenceImages);
 
       const task = await createVideoTask(promptWithStyle, {
-        imageUrl: referenceImages[0], // 第一张作为参考图
+        imageUrl: referenceImages[0], // 旧版模型只用第一张
+        images: referenceImages, // 新版模型 reference 模式可用多张
         numFrames,
         frameRate: 24,
+        seconds: duration,
+        config: aiConfig,
       });
 
-      const videoUrl = await waitForVideo(task.taskId);
+      const videoUrl = await waitForVideo(task.taskId, 300000, aiConfig);
 
       return NextResponse.json({
         success: true,
@@ -77,7 +108,8 @@ export async function POST(request: NextRequest) {
     }
 
     // ─── 长视频：分段生成 + 拼接 ─────────────────
-    const segmentCount = Math.ceil(duration / MAX_SEGMENT_SECONDS);
+    const segmentCount = Math.ceil(duration / maxSeg);
+    const secondsPerSegment = Math.ceil(duration / segmentCount);
     // 总帧数 = 原始时长×帧率（不用 durationToFrames，因为它有 441 帧上限，只适合单段）
     const FRAME_RATE = 24;
     const totalFrames = duration * FRAME_RATE;
@@ -87,7 +119,7 @@ export async function POST(request: NextRequest) {
     const adjustedFrames = segmentFrames(framesPerSegment, segmentCount, totalFrames);
 
     // 先用 AI 改写整个 prompt（避免每段独立改写增加开销）
-    const safePrompt = await rewriteVideoPrompt(prompt);
+    const safePrompt = await rewriteVideoPrompt(prompt, aiConfig);
     // 生成每段的 prompt（带时间线描述）
     const segmentPrompts = splitPromptByTimeline(safePrompt, segmentCount);
 
@@ -98,8 +130,11 @@ export async function POST(request: NextRequest) {
         console.log(`[Video] Seg ${i + 1}/${segmentCount}: ${finalPrompt.substring(0, 80)}...`);
         return createVideoTask(finalPrompt, {
           imageUrl: referenceImages[0],
+          images: referenceImages,
           numFrames: adjustedFrames[i],
           frameRate: 24,
+          seconds: secondsPerSegment,
+          config: aiConfig,
         });
       })
     );
@@ -107,7 +142,7 @@ export async function POST(request: NextRequest) {
     // 并行等待所有段完成（总耗时 ≈ 最慢的一段，而非各段之和）
     console.log(`Waiting for ${tasks.length} video tasks...`);
     const videoUrls = await Promise.all(
-      tasks.map((t, i) => waitForVideo(t.taskId, 600000))
+      tasks.map((t) => waitForVideo(t.taskId, 600000, aiConfig))
     );
     console.log(`All ${videoUrls.length} segments completed.`);
 

@@ -1,7 +1,8 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireAuth } from "@/lib/api";
-import { simulateDialogue, isAIConfigured } from "@/lib/analysis/engine";
+import { simulateDialogue } from "@/lib/analysis/engine";
+import { loadUserAIConfig } from "@/lib/ai/config-server";
 import { emptyAnalysis, type AnalysisProfile } from "@/lib/analysis/types";
 
 export async function POST(request: NextRequest) {
@@ -75,16 +76,18 @@ export async function POST(request: NextRequest) {
       }))
       .filter((m: any) => m.content);
 
+    const aiConfig = await loadUserAIConfig(user.userId);
     const result = await simulateDialogue(
       profile,
       String(userAction),
       history,
-      mode === "analysis" ? "analysis" : "dialogue"
+      mode === "analysis" ? "analysis" : "dialogue",
+      aiConfig
     );
 
     if (!result) {
       // 未配置 AI 时明确告知，而不是返回编造的角色台词
-      const reason = isAIConfigured()
+      const reason = aiConfig
         ? "模拟失败，请稍后重试"
         : "未配置 AI 服务，模拟对话不可用";
       return json({ error: reason }, 503);

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireAuth } from "@/lib/api";
 import { runCounterfactual } from "@/lib/analysis/engine";
+import { loadUserAIConfig } from "@/lib/ai/config-server";
 import { emptyAnalysis, type AnalysisProfile } from "@/lib/analysis/types";
 
 export async function POST(request: NextRequest) {
@@ -24,10 +25,12 @@ export async function POST(request: NextRequest) {
     const profile: AnalysisProfile =
       safeJson(character.analysisProfile) || emptyAnalysis("该人物尚未完成人格研判");
 
+    const aiConfig = await loadUserAIConfig(user.userId);
     const result = await runCounterfactual(
       profile,
       String(originalAction),
-      String(alternativeAction)
+      String(alternativeAction),
+      aiConfig
     );
 
     if (!result) {

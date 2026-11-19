@@ -73,8 +73,14 @@ function ExploreContent() {
   const router = useRouter();
   const params = useSearchParams();
 
-  const initialTab = params.get("tab") === "personal" ? "personal" : "public";
-  const [tab, setTab] = useState<"public" | "personal">(initialTab);
+  const tabParam = params.get("tab");
+  const initialTab: "public" | "personal" | "fictional" =
+    tabParam === "personal"
+      ? "personal"
+      : tabParam === "fictional"
+        ? "fictional"
+        : "public";
+  const [tab, setTab] = useState<"public" | "personal" | "fictional">(initialTab);
 
   useEffect(() => {
     if (!isAuthenticated()) router.push("/login");
@@ -95,10 +101,11 @@ function ExploreContent() {
       </header>
 
       {/* ── 模式切换 ── */}
-      <div className="flex gap-1 p-1 rounded-2xl bg-white/[0.035] border border-white/[0.06] mb-6 rise">
+      <div className="flex gap-1 p-1 rounded-2xl bg-[var(--chip-bg)] border border-[var(--hairline)] mb-6 rise">
         {(
           [
             ["public", "公众人物"],
+            ["fictional", "虚构角色"],
             ["personal", "身边的人"],
           ] as const
         ).map(([key, label]) => (
@@ -116,9 +123,9 @@ function ExploreContent() {
         ))}
       </div>
 
-      {tab === "public" ? (
-        <PublicForm />
-      ) : (
+      {tab === "public" && <PublicForm />}
+      {tab === "fictional" && <FictionalForm />}
+      {tab === "personal" && (
         <PersonalForm onDone={(id) => router.push(`/character/${id}`)} />
       )}
     </div>
@@ -263,6 +270,191 @@ function PublicForm() {
             <button
               key={s.name}
               onClick={() => submit(s.name)}
+              className="surface p-3.5 text-left press hover:border-white/[0.12] transition-colors"
+            >
+              <div className="text-[13.5px] text-bone-100">{s.name}</div>
+              <div className="text-[11px] text-bone-500 mt-0.5">{s.hint}</div>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════ 虚构角色 ══════════════ */
+
+const FICTIONAL_SUGGESTIONS = [
+  { name: "孙悟空", hint: "《西游记》· 战力与变化" },
+  { name: "宇智波佐助", hint: "《火影忍者》· 忍术与写轮眼" },
+  { name: "吉尔伽美什", hint: "《Fate》· 宝具与王财" },
+  { name: "阿尔托莉雅", hint: "《Fate》· 圣剑与骑士道" },
+  { name: "琦玉", hint: "《一拳超人》· 无上限" },
+  { name: "五条悟", hint: "《咒术回战》· 无下限术式" },
+];
+
+function FictionalForm() {
+  const router = useRouter();
+  const [name, setName] = useState("");
+  const [work, setWork] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [phase, setPhase] = useState(0);
+
+  const PHASES = [
+    "检索原作设定与战绩……",
+    "梳理能力体系与限制条件……",
+    "推演战术风格与相性……",
+    "标定弱点与破解方式……",
+    "生成能力画像……",
+  ];
+
+  useEffect(() => {
+    if (!loading) return;
+    const t = setInterval(() => setPhase((p) => (p + 1) % PHASES.length), 2600);
+    return () => clearInterval(t);
+  }, [loading]);
+
+  async function submit(n?: string, w?: string) {
+    const target = (n ?? name).trim();
+    if (!target || loading) return;
+    const workName = (w ?? work).trim();
+    setName(target);
+    setError("");
+    setLoading(true);
+
+    try {
+      // 作品名作为线索传给引擎，帮助模型锁定角色出处（同名角色很多）
+      const hint = workName
+        ? `虚构角色，出自《${workName}》。重点评估能力、战斗力与弱点，不做人格量表式的心理测量。`
+        : "虚构角色。重点评估能力、战斗力与弱点，不做人格量表式的心理测量。";
+
+      const res = await httpPost("/api/character/analyze", {
+        name: target,
+        hint,
+      });
+
+      if (res instanceof Response) {
+        const reader = res.body?.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let characterId: number | null = null;
+
+        while (reader) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+          for (const line of lines) {
+            if (!line.startsWith("data: ")) continue;
+            const raw = line.slice(6).trim();
+            if (raw === "[DONE]") continue;
+            try {
+              const data = JSON.parse(raw);
+              if (data.characterId) characterId = data.characterId;
+            } catch {}
+          }
+        }
+
+        if (characterId) {
+          router.push(`/character/${characterId}`);
+          return;
+        }
+      }
+      setError("分析未能完成，请稍后重试");
+    } catch (e: any) {
+      setError(e.message || "分析失败");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="surface-raised p-7 text-center rise">
+        <div className="w-16 h-16 mx-auto mb-6 relative">
+          <div
+            className="absolute inset-0 rounded-full border breathe"
+            style={{ borderColor: "color-mix(in srgb, var(--accent) 30%, transparent)" }}
+          />
+          <div
+            className="absolute inset-2 rounded-full border breathe"
+            style={{
+              borderColor: "color-mix(in srgb, var(--accent-2) 35%, transparent)",
+              animationDelay: "0.4s",
+            }}
+          />
+          <div className="absolute inset-0 flex items-center justify-center">
+            <span className="w-2 h-2 rounded-full" style={{ background: "var(--accent)" }} />
+          </div>
+        </div>
+        <h3 className="font-display text-[18px] text-bone-50 mb-2">
+          正在评估「{name}」
+        </h3>
+        <p className="text-[13px] text-bone-400 h-5">{PHASES[phase]}</p>
+        <p className="text-[11px] text-bone-600 mt-6 leading-relaxed">
+          虚构角色没有真实史料，评估依据是原作设定与战绩。
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rise">
+      <div className="surface-raised p-5 md:p-6">
+        <label className="block text-[13px] text-bone-300 mb-2.5">
+          角色名
+        </label>
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="如：孙悟空、五条悟、吉尔伽美什"
+          className="field mb-3"
+          autoFocus
+        />
+
+        <label className="block text-[13px] text-bone-300 mb-2.5">
+          出自哪部作品 <span className="text-bone-600">（建议填写，同名角色很多）</span>
+        </label>
+        <div className="flex gap-2">
+          <input
+            value={work}
+            onChange={(e) => setWork(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && submit()}
+            placeholder="如：火影忍者、Fate/stay night"
+            className="field flex-1"
+          />
+          <button
+            onClick={() => submit()}
+            disabled={!name.trim()}
+            className="btn-primary shrink-0 px-5"
+          >
+            评估
+          </button>
+        </div>
+
+        {error && (
+          <div className="mt-3 text-[12px] text-rose bg-rose/[0.08] border border-rose/20 rounded-lg px-3 py-2">
+            {error}
+          </div>
+        )}
+
+        <p className="text-[11px] text-bone-600 mt-3 leading-relaxed">
+          评估维度包括战斗力、能力上限、战术智力、成长潜力、防御韧性、速度、精神力与弱点暴露。
+          这是能力分析，不是人格测量。
+        </p>
+      </div>
+
+      <div className="mt-6">
+        <div className="text-[11px] tracking-[0.2em] uppercase text-bone-500 mb-3">
+          试试这些
+        </div>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {FICTIONAL_SUGGESTIONS.map((s) => (
+            <button
+              key={s.name}
+              onClick={() => submit(s.name, s.hint.match(/《(.+?)》/)?.[1] || "")}
               className="surface p-3.5 text-left press hover:border-white/[0.12] transition-colors"
             >
               <div className="text-[13.5px] text-bone-100">{s.name}</div>

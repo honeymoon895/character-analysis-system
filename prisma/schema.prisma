@@ -26,6 +26,18 @@ model User {
   selfValues             String?  @map("self_values")            // JSON
   // 完整研判档案（AnalysisProfile），包含证据链、竞争假设与可证伪预测
   selfAnalysisProfile    String?  @map("self_analysis_profile")
+
+  // 用户自选的 AI 服务配置（不填则使用服务端环境变量）
+  aiProvider   String? @map("ai_provider")     // 服务商 id，如 deepseek / openai
+  aiApiKey     String? @map("ai_api_key")
+  aiBaseUrl    String? @map("ai_base_url")     // 完整 chat/completions 端点
+  aiModel      String? @map("ai_model")        // 对话模型
+  // 图像与视频通常需要独立的模型（甚至独立端点），与对话模型分开配置
+  aiImageModel String? @map("ai_image_model")
+  aiVideoModel String? @map("ai_video_model")
+  aiImageUrl   String? @map("ai_image_url")    // 可选：图像接口独立端点
+  aiVideoUrl   String? @map("ai_video_url")    // 可选：视频接口独立端点
+
   selfAnalysisComplete   Boolean  @default(false) @map("self_analysis_complete")
 
   characters        Character[]

@@ -197,6 +197,14 @@ export interface AnalysisMeta {
   isAnalyzed: boolean;
   modelVersion: string;
   generatedAt: string;
+  /** 本次采用的评估域（人格 / 文学 / 军事 / …），决定维度集合 */
+  domain?: string;
+  /** 该域的展示名，如「文学气质」 */
+  domainName?: string;
+  /** 该域看什么 */
+  domainTagline?: string;
+  /** 维度是否来自实证心理测量（除人格域外均为分析工具） */
+  empirical?: boolean;
 }
 
 /** 完整研判档案 */

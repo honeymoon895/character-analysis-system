@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuthStore } from "@/store/auth";
 import { httpGet, httpPost } from "@/lib/http";
@@ -25,7 +25,7 @@ export default function VideoPage() {
     <Suspense
       fallback={
         <div className="shell pt-10">
-          <div className="h-32 rounded-2xl bg-white/[0.03] animate-pulse" />
+          <div className="h-32 rounded-2xl bg-[var(--glass-2)] animate-pulse" />
         </div>
       }
     >
@@ -56,20 +56,20 @@ function VideoContent() {
 
   const [character, setCharacter] = useState<any>(null);
 
+  const loadCharacter = useCallback(async () => {
+    try {
+      const res = await httpGet(`/api/character/${characterId}`);
+      setCharacter(res.character);
+    } catch {}
+  }, [characterId]);
+
   useEffect(() => {
     if (!isAuthenticated()) {
       router.push("/login");
       return;
     }
     if (characterId) loadCharacter();
-  }, []);
-
-  async function loadCharacter() {
-    try {
-      const res = await httpGet(`/api/character/${characterId}`);
-      setCharacter(res.character);
-    } catch {}
-  }
+  }, [characterId, loadCharacter]);
 
   function buildFinalPrompt(): string {
     if (sceneType === "custom") return customPrompt;
@@ -158,7 +158,7 @@ function VideoContent() {
             className="flex-1 h-[2px] rounded-full transition-colors"
             style={{
               background:
-                s <= step ? "rgba(217,167,92,0.7)" : "rgba(255,255,255,0.07)",
+                s <= step ? "rgba(94,240,224,0.75)" : "var(--hairline)",
             }}
           />
         ))}
@@ -166,8 +166,8 @@ function VideoContent() {
 
       <div className="surface-raised p-5 md:p-6 mb-4">
         {character && (
-          <div className="flex items-center gap-3 mb-5 pb-4 border-b border-white/[0.07]">
-            <div className="w-9 h-9 rounded-full overflow-hidden shrink-0 border border-white/10 bg-ink-750 flex items-center justify-center">
+          <div className="flex items-center gap-3 mb-5 pb-4 border-b border-[var(--border-1)]">
+            <div className="w-9 h-9 rounded-full overflow-hidden shrink-0 border border-[var(--border-2)] bg-ink-750 flex items-center justify-center">
               {character.portraitUrl &&
               !character.portraitUrl.includes("dicebear.com") ? (
                 // eslint-disable-next-line @next/next/no-img-element
@@ -195,7 +195,7 @@ function VideoContent() {
                   className={`p-4 rounded-xl border text-left transition-colors ${
                     sceneType === s.id
                       ? "border-amber/40 bg-amber/[0.06]"
-                      : "border-white/[0.07] hover:border-white/[0.12]"
+                      : "border-[var(--border-1)] hover:border-white/[0.12]"
                   }`}
                 >
                   <div className="text-[13.5px] text-bone-50 mb-1">{s.label}</div>
@@ -230,7 +230,7 @@ function VideoContent() {
               className="field"
             />
             {sceneType !== "custom" && (
-              <div className="mt-3 bg-white/[0.025] rounded-xl px-3.5 py-3">
+              <div className="mt-3 bg-[var(--glass-2)] rounded-xl px-3.5 py-3">
                 <div className="text-[10px] uppercase tracking-[0.14em] text-bone-600 mb-1.5">
                   将用于生成
                 </div>
@@ -295,7 +295,7 @@ function VideoContent() {
                   className={`px-4 min-h-[44px] rounded-xl border text-[13px] transition-colors ${
                     duration === d
                       ? "border-amber/40 bg-amber/[0.06] text-amber-bright"
-                      : "border-white/[0.07] text-bone-400"
+                      : "border-[var(--border-1)] text-bone-400"
                   }`}
                 >
                   {d}秒
@@ -303,7 +303,7 @@ function VideoContent() {
               ))}
             </div>
 
-            <div className="bg-white/[0.025] rounded-xl px-3.5 py-3">
+            <div className="bg-[var(--glass-2)] rounded-xl px-3.5 py-3">
               <div className="text-[10px] uppercase tracking-[0.14em] text-bone-600 mb-1.5">
                 最终描述
               </div>
@@ -321,7 +321,7 @@ function VideoContent() {
         )}
 
         {/* 导航 */}
-        <div className="flex gap-2 mt-6 pt-4 border-t border-white/[0.07]">
+        <div className="flex gap-2 mt-6 pt-4 border-t border-[var(--border-1)]">
           {step > 1 && (
             <button
               onClick={() => setStep(step - 1)}
@@ -439,10 +439,10 @@ function Toggle({
       className={`w-full flex items-center gap-3 p-3.5 rounded-xl border transition-colors ${
         checked
           ? "border-amber/35 bg-amber/[0.05]"
-          : "border-white/[0.07]"
+          : "border-[var(--border-1)]"
       }`}
     >
-      <div className="w-9 h-9 rounded-full overflow-hidden shrink-0 border border-white/10 bg-ink-750 flex items-center justify-center">
+      <div className="w-9 h-9 rounded-full overflow-hidden shrink-0 border border-[var(--border-2)] bg-ink-750 flex items-center justify-center">
         {avatar ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={avatar} alt="" className="w-full h-full object-cover" />
@@ -457,7 +457,7 @@ function Toggle({
         className={`w-5 h-5 rounded-md border flex items-center justify-center transition-colors ${
           checked
             ? "border-amber/60 bg-amber/20"
-            : "border-white/15"
+            : "border-[var(--border-2)]"
         }`}
       >
         {checked && (

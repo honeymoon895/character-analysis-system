@@ -1,7 +1,8 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireAuth } from "@/lib/api";
-import { analyzePublicFigure, isAIConfigured } from "@/lib/analysis/engine";
+import { analyzePublicFigure } from "@/lib/analysis/engine";
+import { loadUserAIConfig } from "@/lib/ai/config-server";
 import {
   toLegacyTraits,
   toSummary,
@@ -12,7 +13,7 @@ import {
 export async function POST(request: NextRequest) {
   try {
     const user = requireAuth(request);
-    const { name } = await request.json();
+    const { name, hint } = await request.json();
 
     if (!name?.trim()) {
       return json({ error: "请输入人物姓名" }, 400);
@@ -34,7 +35,12 @@ export async function POST(request: NextRequest) {
       data: { characterId: character.id, sourceSite: "web", status: "processing" },
     });
 
-    const profile = await analyzePublicFigure(characterName);
+    const aiConfig = await loadUserAIConfig(user.userId);
+    const profile = await analyzePublicFigure(
+      characterName,
+      aiConfig,
+      typeof hint === "string" ? hint : undefined
+    );
 
     // 新旧字段同时写：新字段承载完整研判，旧字段供既有组件读取
     await prisma.character.update({
@@ -58,7 +64,7 @@ export async function POST(request: NextRequest) {
     const payload = {
       characterId: character.id,
       isAnalyzed: profile.meta.isAnalyzed,
-      aiConfigured: isAIConfigured(),
+      aiConfigured: Boolean(aiConfig),
       sufficiency: profile.meta.sufficiency,
       unknowns: profile.meta.unknowns,
     };

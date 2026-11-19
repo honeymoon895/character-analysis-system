@@ -6,6 +6,7 @@ import type {
   TraitScore,
   Evidence,
 } from "@/lib/analysis/types";
+import { getFramework } from "@/lib/analysis/domains";
 
 /**
  * 研判档案展示组件
@@ -15,18 +16,6 @@ import type {
  * 主结论用大字号衬线，证据用低对比度小字并可展开，概率用条状图。
  */
 
-const TRAIT_ORDER = [
-  "OPENNESS",
-  "CONSCIENTIOUSNESS",
-  "EXTRAVERSION",
-  "AGREEABLENESS",
-  "NEUROTICISM",
-  "DECISIVENESS",
-  "RISK_TENDENCY",
-  "EMPATHY",
-  "LEADERSHIP",
-];
-
 /** 复合指标的说明，帮助用户理解为什么这些维度不是独立人格维度 */
 const COMPOSITE_HINT: Record<string, string> = {
   DECISIVENESS: "由尽责性（审慎）与稳定性推导",
@@ -35,17 +24,114 @@ const COMPOSITE_HINT: Record<string, string> = {
   LEADERSHIP: "由外向性（果断自信）与尽责性推导",
 };
 
-export function ProfileView({ profile }: { profile: AnalysisProfile }) {
-  const traits = useMemo(() => {
+/**
+ * 档案分区
+ *
+ * 拆成七块而不是一整条长页：
+ * 用户反馈「页面很长，虽然都有用，但一直往下滑找东西很累」。
+ * 现在每块独立可切换，模块之间不互相挤压。
+ */
+export type ProfilePart =
+  | "thesis"
+  | "traits"
+  | "drives"
+  | "relational"
+  | "hypotheses"
+  | "guidance"
+  | "narrative";
+
+export const PROFILE_PARTS: { key: ProfilePart; label: string; hint: string }[] = [
+  { key: "thesis", label: "结论", hint: "核心判断与机制解释" },
+  { key: "traits", label: "特质", hint: "各维度评分与证据" },
+  { key: "drives", label: "驱动", hint: "需要、价值与防御方式" },
+  { key: "relational", label: "关系", hint: "依恋与互动模式" },
+  { key: "hypotheses", label: "假设", hint: "竞争解释与可验证预测" },
+  { key: "guidance", label: "建议", hint: "怎么相处、怎么避免踩雷" },
+  { key: "narrative", label: "叙事", hint: "自我认知与盲区" },
+];
+
+function useOrderedTraits(profile: AnalysisProfile) {
+  /**
+   * 维度顺序跟随评估域。
+   * 不同职业的人用不同框架（诗人看意象与语言，将领看战略与决断），
+   * 所以这里不能写死一套顺序——先按域的维度定义排，再补上库里多出来的。
+   */
+  return useMemo(() => {
+    const fw = getFramework(profile.meta?.domain);
+    const order = fw.dimensions.map((d) => d.code);
     const byCode = new Map(profile.traits.map((t) => [t.code, t]));
-    return TRAIT_ORDER.map((code) => byCode.get(code)).filter(
-      (t): t is TraitScore => Boolean(t)
-    );
-  }, [profile.traits]);
+
+    const ordered = order
+      .map((code) => byCode.get(code))
+      .filter((t): t is TraitScore => Boolean(t));
+
+    // 模型偶尔输出定义外的维度，追加在后面而不是丢弃
+    const extra = profile.traits.filter((t) => !order.includes(t.code));
+
+    return [...ordered, ...extra];
+  }, [profile.traits, profile.meta?.domain]);
+}
+
+/** 只渲染指定的一个分区 */
+export function ProfilePartView({
+  profile,
+  part,
+}: {
+  profile: AnalysisProfile;
+  part: ProfilePart;
+}) {
+  const traits = useOrderedTraits(profile);
+
+  switch (part) {
+    case "thesis":
+      return (
+        <div className="space-y-10">
+          <CoreThesis profile={profile} />
+          <DomainBanner profile={profile} />
+          <Formulation profile={profile} />
+          <MetaFooter profile={profile} />
+        </div>
+      );
+    case "traits":
+      return (
+        <TraitSection
+          traits={traits}
+          sufficiency={profile.meta.sufficiency}
+        />
+      );
+    case "drives":
+      return (
+        <div className="space-y-10">
+          <MotivationSection profile={profile} />
+          <RegulationSection profile={profile} />
+        </div>
+      );
+    case "relational":
+      return <RelationalSection profile={profile} />;
+    case "hypotheses":
+      return (
+        <div className="space-y-10">
+          <HypothesesSection profile={profile} />
+          <PredictionSection profile={profile} />
+        </div>
+      );
+    case "guidance":
+      return <GuidanceSection profile={profile} />;
+    case "narrative":
+      return <NarrativeSection profile={profile} />;
+    default:
+      return null;
+  }
+}
+
+/** 一次性渲染全部（用于导出、打印等场景） */
+export function ProfileView({ profile }: { profile: AnalysisProfile }) {
+  const traits = useOrderedTraits(profile);
 
   return (
     <div className="space-y-10">
       <CoreThesis profile={profile} />
+      <DomainBanner profile={profile} />
       <Formulation profile={profile} />
       <TraitSection traits={traits} sufficiency={profile.meta.sufficiency} />
       <MotivationSection profile={profile} />
@@ -57,6 +143,59 @@ export function ProfileView({ profile }: { profile: AnalysisProfile }) {
       <NarrativeSection profile={profile} />
       <MetaFooter profile={profile} />
     </div>
+  );
+}
+
+/* ══════════════ 评估域说明 ══════════════ */
+
+/**
+ * 告诉用户这次用的什么尺子。
+ * 为什么需要：不同人用不同框架，不说清楚会让人以为结果不可比是系统出错。
+ * 同时明确标注「非实证量表」，避免把分析工具当成科学测量。
+ */
+function DomainBanner({ profile }: { profile: AnalysisProfile }) {
+  const m = profile.meta;
+  if (!m?.domainName) return null;
+
+  return (
+    <section>
+      <div className="surface p-4 flex items-start gap-3">
+        <div
+          className="w-9 h-9 rounded-xl shrink-0 flex items-center justify-center"
+          style={{
+            background: "color-mix(in srgb, var(--accent) 14%, transparent)",
+            border: "1px solid color-mix(in srgb, var(--accent) 26%, transparent)",
+          }}
+        >
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" style={{ color: "var(--accent)" }}>
+            <path d="M4 19V5M4 19h16" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+            <path d="M7.5 15.5v-4M11.5 15.5v-7M15.5 15.5v-5.5M19 15.5v-9" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" opacity="0.7" />
+          </svg>
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[13.5px] text-bone-50 font-medium">
+              {m.domainName}
+            </span>
+            {m.empirical ? (
+              <span className="chip chip-jade text-[10px] py-0.5">实证量表</span>
+            ) : (
+              <span className="chip text-[10px] py-0.5">分析框架</span>
+            )}
+          </div>
+          {m.domainTagline && (
+            <p className="text-[12px] text-bone-400 leading-relaxed mt-1">
+              {m.domainTagline}
+            </p>
+          )}
+          <p className="text-[11px] text-bone-600 leading-relaxed mt-1.5">
+            {m.empirical
+              ? "大五人格模型有实证基础，但基于间接材料推断仍有误差。"
+              : "这套维度是为这类人物设计的观察框架，不是经过信效度检验的心理量表。"}
+          </p>
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -82,7 +221,7 @@ function CoreThesis({ profile }: { profile: AnalysisProfile }) {
         </h2>
 
         {f.coreConflict && (
-          <div className="mt-5 pt-5 border-t border-white/[0.07]">
+          <div className="mt-5 pt-5 border-t border-[var(--border-1)]">
             <div className="text-[11px] tracking-[0.16em] uppercase text-bone-500 mb-2">
               内在冲突
             </div>
@@ -206,7 +345,7 @@ function TraitRow({ trait }: { trait: TraitScore }) {
               {trait.name}
             </span>
             {trait.composite && (
-              <span className="text-[10px] text-bone-500 border border-white/10 rounded px-1.5 py-0.5">
+              <span className="text-[10px] text-bone-500 border border-[var(--border-2)] rounded px-1.5 py-0.5">
                 复合
               </span>
             )}
@@ -233,9 +372,9 @@ function TraitRow({ trait }: { trait: TraitScore }) {
         </div>
       </summary>
 
-      <div className="px-4 md:px-5 pb-5 pt-1 space-y-4 border-t border-white/[0.06]">
+      <div className="px-4 md:px-5 pb-5 pt-1 space-y-4 border-t border-[var(--hairline)]">
         {trait.boundary && (
-          <div className="text-[12px] text-bone-400 leading-relaxed bg-white/[0.025] rounded-lg px-3 py-2.5">
+          <div className="text-[12px] text-bone-400 leading-relaxed bg-[var(--glass-2)] rounded-lg px-3 py-2.5">
             <span className="text-bone-500">边界：</span>
             {trait.boundary}
           </div>
@@ -305,7 +444,7 @@ function Meter({
               confidence >= 70
                 ? "linear-gradient(90deg, #6fa893, #93c4b1)"
                 : confidence >= 45
-                  ? "linear-gradient(90deg, #a97c3c, #edc07a)"
+                  ? "linear-gradient(90deg, #12867c, #5ef0e0)"
                   : "linear-gradient(90deg, #6d675c, #8f887a)",
           }}
         />
@@ -596,7 +735,7 @@ function RelationalSection({ profile }: { profile: AnalysisProfile }) {
             </div>
 
             {a.reasoning && (
-              <p className="text-[12px] text-bone-400 leading-relaxed mt-4 pt-3 border-t border-white/[0.06]">
+              <p className="text-[12px] text-bone-400 leading-relaxed mt-4 pt-3 border-t border-[var(--hairline)]">
                 {a.reasoning}
               </p>
             )}
@@ -730,7 +869,7 @@ function HypothesesSection({ profile }: { profile: AnalysisProfile }) {
                           width: `${h.probability}%`,
                           background:
                             h.probability >= 60
-                              ? "linear-gradient(90deg,#a97c3c,#edc07a)"
+                              ? "linear-gradient(90deg,#12867c,#5ef0e0)"
                               : "linear-gradient(90deg,#3d3a34,#6d675c)",
                         }}
                       />
@@ -744,7 +883,7 @@ function HypothesesSection({ profile }: { profile: AnalysisProfile }) {
               </div>
             </summary>
 
-            <div className="px-4 md:px-5 pb-5 pt-1 border-t border-white/[0.06] space-y-3">
+            <div className="px-4 md:px-5 pb-5 pt-1 border-t border-[var(--hairline)] space-y-3">
               {h.supporting.length > 0 && (
                 <div>
                   <div className="text-[11px] text-jade/80 mb-1.5">支持</div>
@@ -772,7 +911,7 @@ function HypothesesSection({ profile }: { profile: AnalysisProfile }) {
                 </div>
               )}
               {h.falsifier && (
-                <div className="bg-white/[0.025] rounded-lg px-3 py-2.5">
+                <div className="bg-[var(--glass-2)] rounded-lg px-3 py-2.5">
                   <span className="text-[11px] text-amber/80">如何证伪：</span>
                   <span className="text-[12px] text-bone-300 leading-relaxed">
                     {h.falsifier}
@@ -968,7 +1107,7 @@ function NarrativeSection({ profile }: { profile: AnalysisProfile }) {
         )}
 
         {n.blindSpots.length > 0 && (
-          <div className="surface p-4 border-l-2" style={{ borderLeftColor: "rgba(217,167,92,0.4)" }}>
+          <div className="surface p-4 border-l-2" style={{ borderLeftColor: "rgba(94,240,224,0.42)" }}>
             <div className="flex items-center gap-2 mb-2.5">
               <div className="text-[11px] tracking-[0.16em] uppercase text-amber/80">
                 盲区
@@ -999,7 +1138,7 @@ function MetaFooter({ profile }: { profile: AnalysisProfile }) {
   if (!m.sources.length && !m.unknowns.length) return null;
 
   return (
-    <section className="pt-6 border-t border-white/[0.07]">
+    <section className="pt-6 border-t border-[var(--border-1)]">
       <div className="grid gap-5 md:grid-cols-2">
         {m.sources.length > 0 && (
           <div>

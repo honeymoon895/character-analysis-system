@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuthStore } from "@/store/auth";
@@ -36,15 +36,7 @@ export default function LibraryPage() {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<"all" | "WEB" | "USER_BUILT">("all");
 
-  useEffect(() => {
-    if (!isAuthenticated()) {
-      router.push("/login");
-      return;
-    }
-    load();
-  }, []);
-
-  async function load() {
+  const load = useCallback(async () => {
     try {
       const res = await httpGet("/api/character/list");
       setItems(res.characters || []);
@@ -53,7 +45,15 @@ export default function LibraryPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
+
+  useEffect(() => {
+    if (!isAuthenticated()) {
+      router.push("/login");
+      return;
+    }
+    load();
+  }, [load]);
 
   const relationships = useMemo(() => {
     const set = new Set<string>();
@@ -166,12 +166,49 @@ export default function LibraryPage() {
             <Arrow />
           </div>
         </Link>
+
+        <Link
+          href="/chat"
+          className="surface-raised p-5 press group relative overflow-hidden block md:col-span-2"
+        >
+          <div className="flex items-start gap-4">
+            <div
+              className="w-11 h-11 rounded-xl border flex items-center justify-center shrink-0"
+              style={{
+                background:
+                  "linear-gradient(145deg, rgba(139,92,246,0.18), rgba(94,240,224,0.1))",
+                borderColor: "rgba(167,139,250,0.28)",
+              }}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="text-violet-glow">
+                <path
+                  d="M20 12.5c0 3.6-3.6 6.5-8 6.5-.9 0-1.8-.1-2.6-.3L5 20.5l1.3-3.2C4.9 16.1 4 14.4 4 12.5 4 8.9 7.6 6 12 6s8 2.9 8 6.5Z"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinejoin="round"
+                />
+                <circle cx="9" cy="12.5" r="1" fill="currentColor" />
+                <circle cx="12" cy="12.5" r="1" fill="currentColor" />
+                <circle cx="15" cy="12.5" r="1" fill="currentColor" />
+              </svg>
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="text-[15px] text-bone-50 font-medium mb-1">
+                和 TA 对话
+              </div>
+              <p className="text-[12.5px] text-bone-400 leading-relaxed">
+                用对方的思维方式回应你，每条都能展开看「为什么会这样说」
+              </p>
+            </div>
+            <Arrow />
+          </div>
+        </Link>
       </div>
 
       {/* ── 空态 ── */}
       {items.length === 0 && (
         <div className="surface p-8 md:p-12 text-center rise" style={{ animationDelay: "120ms" }}>
-          <div className="w-14 h-14 mx-auto mb-5 rounded-full border border-white/10 flex items-center justify-center breathe">
+          <div className="w-14 h-14 mx-auto mb-5 rounded-full border border-[var(--border-2)] flex items-center justify-center breathe">
             <span className="w-2 h-2 rounded-full bg-amber/70" />
           </div>
           <h2 className="font-display text-[19px] text-bone-100 mb-2">
@@ -412,33 +449,21 @@ function MiniTraits({ traits }: { traits: any }) {
   const arr = parseTraits(traits);
   if (arr.length === 0) return null;
 
-  const ordered = [
-    "OPENNESS",
-    "CONSCIENTIOUSNESS",
-    "EXTRAVERSION",
-    "AGREEABLENESS",
-    "NEUROTICISM",
-    "DECISIVENESS",
-    "RISK_TENDENCY",
-    "EMPATHY",
-    "LEADERSHIP",
-  ];
-
+  // 每条竖条对应实际测出的一个维度，数量随人物领域变化
   return (
     <div className="flex items-end gap-[3px] h-5" aria-hidden>
-      {ordered.map((code) => {
-        const t = arr.find((x: any) => x.code === code);
-        const measured = t && t.measured !== false && (t.confidence ?? 0) >= 30;
+      {arr.map((t: any, i: number) => {
+        const measured = t.measured !== false && (t.confidence ?? 0) >= 30;
         const h = measured ? Math.max(3, ((t.score ?? 0) / 100) * 20) : 2;
         return (
           <span
-            key={code}
+            key={`${t.code}-${i}`}
             className="w-[3px] rounded-full"
             style={{
               height: h,
               background: measured
-                ? "rgba(217,167,92,0.75)"
-                : "rgba(255,255,255,0.1)",
+                ? "rgba(94,240,224,0.8)"
+                : "var(--border-2)",
             }}
           />
         );
@@ -457,7 +482,7 @@ function Avatar({ item, size }: { item: CharacterItem; size: number }) {
       <img
         src={item.portraitUrl!}
         alt=""
-        className="rounded-xl object-cover shrink-0 border border-white/10"
+        className="rounded-xl object-cover shrink-0 border border-[var(--border-2)]"
         style={{ width: size, height: size }}
       />
     );
@@ -465,7 +490,7 @@ function Avatar({ item, size }: { item: CharacterItem; size: number }) {
 
   return (
     <div
-      className="rounded-xl shrink-0 flex items-center justify-center border border-white/10 bg-ink-750 text-bone-200"
+      className="rounded-xl shrink-0 flex items-center justify-center border border-[var(--border-2)] bg-ink-750 text-bone-200"
       style={{ width: size, height: size, fontSize: size * 0.4 }}
     >
       <span className="font-display">{item.name.charAt(0)}</span>
@@ -517,14 +542,14 @@ function SearchIcon() {
 function LoadingSkeleton() {
   return (
     <div className="shell pt-10 space-y-4">
-      <div className="h-8 w-48 rounded-lg bg-white/[0.04] animate-pulse" />
+      <div className="h-8 w-48 rounded-lg bg-[var(--chip-bg)] animate-pulse" />
       <div className="grid gap-3 md:grid-cols-2">
-        <div className="h-24 rounded-2xl bg-white/[0.03] animate-pulse" />
-        <div className="h-24 rounded-2xl bg-white/[0.03] animate-pulse" />
+        <div className="h-24 rounded-2xl bg-[var(--glass-2)] animate-pulse" />
+        <div className="h-24 rounded-2xl bg-[var(--glass-2)] animate-pulse" />
       </div>
       <div className="space-y-2.5">
         {[0, 1, 2].map((i) => (
-          <div key={i} className="h-28 rounded-2xl bg-white/[0.025] animate-pulse" />
+          <div key={i} className="h-28 rounded-2xl bg-[var(--glass-2)] animate-pulse" />
         ))}
       </div>
     </div>

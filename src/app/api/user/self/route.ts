@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireAuth } from "@/lib/api";
-import { analyzeSelf, isAIConfigured } from "@/lib/analysis/engine";
+import { analyzeSelf } from "@/lib/analysis/engine";
+import { loadUserAIConfig } from "@/lib/ai/config-server";
 import type { AnalysisProfile } from "@/lib/analysis/types";
 import {
   toLegacyTraits,
@@ -102,7 +103,8 @@ export async function POST(request: NextRequest) {
 
     // 用全部材料重新研判，而不是在旧分数上做加权平均——
     // 旧做法会把早期样本的偏差永久固化进档案，且掩盖材料之间的冲突。
-    const profile = await analyzeSelf(updatedDiary, existingProfile);
+    const aiConfig = await loadUserAIConfig(authUser.userId);
+    const profile = await analyzeSelf(updatedDiary, existingProfile, aiConfig);
 
     const measured = profile.traits.filter(
       (t) => t.score !== null && t.confidence >= 50
@@ -129,7 +131,7 @@ export async function POST(request: NextRequest) {
       entry: newEntry,
       diaryCount: updatedDiary.length,
       analysisComplete,
-      aiConfigured: isAIConfigured(),
+      aiConfigured: Boolean(aiConfig),
       isAnalyzed: profile.meta.isAnalyzed,
       sufficiency: profile.meta.sufficiency,
       unknowns: profile.meta.unknowns,

@@ -43,15 +43,19 @@ export default function RegisterPage() {
     <div className="min-h-dvh flex flex-col justify-center px-5 py-10 max-w-sm mx-auto">
       <div className="mb-8 rise">
         <div
-          className="w-12 h-12 rounded-[14px] mb-6 flex items-center justify-center"
+          className="relative w-14 h-14 rounded-[16px] mb-6 flex items-center justify-center overflow-hidden"
           style={{
-            background:
-              "linear-gradient(145deg, rgba(237,192,122,0.95), rgba(169,124,60,0.9))",
+            background: "conic-gradient(from 210deg, #5ef0e0, #8b5cf6, #5ef0e0)",
+            boxShadow: "0 0 34px -6px rgba(94,240,224,0.85)",
           }}
         >
-          <span className="w-4 h-4 rounded-full bg-ink-950" />
+          <span className="w-8 h-8 rounded-full" style={{ background: "var(--bg-base)" }} />
+          <span
+            className="absolute w-3 h-3 rounded-full"
+            style={{ background: "#5ef0e0", boxShadow: "0 0 12px #5ef0e0" }}
+          />
         </div>
-        <h1 className="font-display text-[26px] leading-tight text-bone-50">
+        <h1 className="font-display text-[28px] leading-tight text-bone-50 tracking-tight">
           创建账号
         </h1>
         <p className="text-[13px] text-bone-500 mt-2 leading-relaxed">

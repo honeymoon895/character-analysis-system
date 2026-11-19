@@ -6,6 +6,7 @@
  * 保证界面升级可以分步进行，不会一次性打断所有页面。
  */
 import type { AnalysisProfile, TraitScore } from "./types";
+import { getFramework } from "./domains";
 
 export interface LegacyTrait {
   code: string;
@@ -17,38 +18,41 @@ export interface LegacyTrait {
   measured: boolean;
 }
 
-/** 从研判档案提取九维评分数组（供雷达图 / 卡片使用） */
+/**
+ * 从研判档案提取评分数组（供雷达图 / 卡片使用）
+ *
+ * 曾经这里写死了九个人格维度的 code，导致文学家（IMAGERY）、
+ * 军事家（STRATEGY）等非人格域的维度全部匹配不上，数组为空、雷达图消失。
+ * 现在改为：按档案所属域的维度定义排序，并把档案里实际存在的维度全部保留。
+ */
 export function toLegacyTraits(profile: AnalysisProfile): LegacyTrait[] {
-  const ordered = [
-    "OPENNESS",
-    "CONSCIENTIOUSNESS",
-    "EXTRAVERSION",
-    "AGREEABLENESS",
-    "NEUROTICISM",
-    "DECISIVENESS",
-    "RISK_TENDENCY",
-    "EMPATHY",
-    "LEADERSHIP",
-  ];
+  const fw = getFramework(profile.meta?.domain);
+  const order = fw.dimensions.map((d) => d.code);
+
+  const ordered: TraitScore[] = [];
   const byCode = new Map<string, TraitScore>(
     profile.traits.map((t) => [t.code, t])
   );
 
-  const result: LegacyTrait[] = [];
-  for (const code of ordered) {
+  // 先按域的正式顺序排
+  for (const code of order) {
     const t = byCode.get(code);
-    if (!t) continue;
-    result.push({
-      code: t.code,
-      name: t.name,
-      // 未测出的维度不伪造分数，雷达图会跳过或显示为低置信
-      score: t.score ?? 0,
-      confidence: t.confidence,
-      evidence: t.evidence.map((e) => e.statement).filter(Boolean),
-      measured: t.score !== null && t.confidence >= 30,
-    });
+    if (t) ordered.push(t);
   }
-  return result;
+  // 再补上定义之外、但模型确实给出的维度，避免丢弃信息
+  for (const t of profile.traits) {
+    if (!order.includes(t.code)) ordered.push(t);
+  }
+
+  return ordered.map((t) => ({
+    code: t.code,
+    name: t.name,
+    // 未测出的维度不伪造分数，雷达图会跳过或显示为低置信
+    score: t.score ?? 0,
+    confidence: t.confidence,
+    evidence: t.evidence.map((e) => e.statement).filter(Boolean),
+    measured: t.score !== null && t.confidence >= 30,
+  }));
 }
 
 /** 从档案生成一段可直接展示的摘要，替代旧的"一句话性格总结" */

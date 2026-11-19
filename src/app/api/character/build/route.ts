@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireAuth } from "@/lib/api";
-import { analyzePerson, isAIConfigured } from "@/lib/analysis/engine";
+import { analyzePerson } from "@/lib/analysis/engine";
+import { loadUserAIConfig } from "@/lib/ai/config-server";
 import {
   toLegacyTraits,
   toSummary,
@@ -87,14 +88,22 @@ async function appendRound(params: {
   });
 
   const basicInfo = safeJson(character.basicInfo) || {};
+  const aiConfig = await loadUserAIConfig(userId);
   const profile = await analyzePerson(
     name || character.name,
     allRecords.map((r) => r.userInput),
     basicInfo.relationship,
-    basicInfo.scene
+    basicInfo.scene,
+    aiConfig
   );
 
-  return await persistAndRespond(character.id, sessionId, profile, allRecords.length);
+  return await persistAndRespond(
+    character.id,
+    sessionId,
+    profile,
+    allRecords.length,
+    Boolean(aiConfig)
+  );
 }
 
 /** 新档案：创建人物并完成首轮研判 */
@@ -137,9 +146,22 @@ async function createCharacter(params: {
     },
   });
 
-  const profile = await analyzePerson(characterName, [material], relationship, scene);
+  const aiConfig = await loadUserAIConfig(userId);
+  const profile = await analyzePerson(
+    characterName,
+    [material],
+    relationship,
+    scene,
+    aiConfig
+  );
 
-  return await persistAndRespond(character.id, session.id, profile, 1);
+  return await persistAndRespond(
+    character.id,
+    session.id,
+    profile,
+    1,
+    Boolean(aiConfig)
+  );
 }
 
 /** 写入新档案并返回前端需要的全部字段 */
@@ -147,7 +169,8 @@ async function persistAndRespond(
   characterId: number,
   sessionId: number,
   profile: AnalysisProfile,
-  roundCount: number
+  roundCount: number,
+  aiConfigured: boolean
 ) {
   const measured = profile.traits.filter(
     (t) => t.score !== null && t.confidence >= 50
@@ -183,7 +206,7 @@ async function persistAndRespond(
     characterId,
     roundNumber: roundCount,
     isComplete,
-    aiConfigured: isAIConfigured(),
+    aiConfigured,
     // 档案质量指标——前端据此提示"还需要补充哪些信息"
     sufficiency: profile.meta.sufficiency,
     measuredDimensions: measured,

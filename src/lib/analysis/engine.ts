@@ -15,15 +15,13 @@ import type {
   Hypothesis,
 } from "./types";
 import { emptyAnalysis, ANALYSIS_MODEL_VERSION } from "./types";
-
-const AI_API_KEY =
-  process.env.AI_API_KEY ||
-  process.env.AGNES_API_KEY ||
-  process.env.DEEPSEEK_API_KEY ||
-  "";
-const API_URL =
-  process.env.AI_API_URL || "https://apihub.agnes-ai.com/v1/chat/completions";
-const AI_MODEL = process.env.AI_MODEL || "agnes-2.0-flash";
+import { envAIConfig, type AIConfig } from "@/lib/ai/config";
+import {
+  FRAMEWORKS,
+  dimensionSpec,
+  guessDomainHints,
+  getFramework,
+} from "./domains";
 
 interface Message {
   role: "system" | "user" | "assistant";
@@ -31,27 +29,28 @@ interface Message {
 }
 
 /** 判断当前是否配置了真实 AI —— 未配置时应当明说，而不是伪造分析 */
-export function isAIConfigured(): boolean {
-  return Boolean(AI_API_KEY);
+export function isAIConfigured(config?: AIConfig | null): boolean {
+  return Boolean((config ?? envAIConfig())?.apiKey);
 }
 
 async function callAI(
   messages: Message[],
+  config: AIConfig | null,
   opts: { temperature?: number; maxTokens?: number; json?: boolean } = {}
 ): Promise<string | null> {
-  if (!AI_API_KEY) return null;
+  if (!config?.apiKey || !config.baseUrl) return null;
 
   const { temperature = 0.4, maxTokens = 8000, json = true } = opts;
 
   try {
-    const response = await fetch(API_URL, {
+    const response = await fetch(config.baseUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${AI_API_KEY}`,
+        Authorization: `Bearer ${config.apiKey}`,
       },
       body: JSON.stringify({
-        model: AI_MODEL,
+        model: config.model,
         messages,
         temperature,
         max_tokens: maxTokens,
@@ -60,7 +59,8 @@ async function callAI(
     });
 
     if (!response.ok) {
-      console.error(`AI API error: ${response.status}`);
+      const detail = await response.text().catch(() => "");
+      console.error(`AI API error: ${response.status} ${detail.slice(0, 200)}`);
       return null;
     }
 
@@ -188,20 +188,78 @@ const FACET_HINTS = `【子面参考（有证据才填）】
 宜人性：信任 / 直率 / 利他 / 顺从合作 / 谦逊 / 共情关怀
 情绪稳定性（神经质反向）：焦虑 / 愤怒敌意 / 抑郁 / 自我意识 / 冲动性 / 脆弱性`;
 
-function buildPublicFigurePrompt(name: string): string {
+function buildPublicFigurePrompt(name: string, hint?: string): string {
+  const domainList = Object.values(FRAMEWORKS)
+    .map((f) => `  - ${f.id}：${f.name}（${f.tagline}）
+    适用于：${f.appliesTo.join("、")}`)
+    .join("\n");
+
   return `${FRAMEWORK_PROMPT}
 
-${FACET_HINTS}
-
 【本次任务】分析公众人物 / 历史人物：「${name}」
+${hint ? `（用户提供的线索：${hint}）` : ""}
 
-要求：
-- 只使用有据可查的公开事实（言行记载、著作、他人评述、重大决策）。若你对这个人物的信息掌握不足，宁愿把 sufficiency 打低、把多数维度置为 null，并在 unknowns 里写清楚，也不要凭名字气质编造。
-- 历史人物需纳入时代与文化背景，避免用现代个人主义标准评判其动机。
+━━━━━━━━ 第一步：选择评估域 ━━━━━━━━
+
+不同的人该用不同的尺子量。请先判断这个人最该用哪个域来评估：
+
+${domainList}
+
+判断依据优先看 TA 的**主要身份与毕生成就**，而不是名气大小。
+一人可能兼跨多域（如既是政治家又是诗人）——选对其一生影响最大的那个。
+如果线索不足以判断，选 personality。
+
+━━━━━━━━ 第二步：按选定域的维度评分 ━━━━━━━━
+
+选定域后，**只输出该域的维度**，不要混入其它域的维度。
+维度定义（分数 0-100；证据不足给 null）：
+
+domain=personality（大五人格）：
+${dimensionSpec(FRAMEWORKS.personality)}
+
+domain=literary（文学气质）：
+${dimensionSpec(FRAMEWORKS.literary)}
+
+domain=military（军事才能）：
+${dimensionSpec(FRAMEWORKS.military)}
+
+domain=business（商业能力）：
+${dimensionSpec(FRAMEWORKS.business)}
+
+domain=science（科研特质）：
+${dimensionSpec(FRAMEWORKS.science)}
+
+domain=art（艺术特质）：
+${dimensionSpec(FRAMEWORKS.art)}
+
+domain=politics（政治手腕）：
+${dimensionSpec(FRAMEWORKS.politics)}
+
+domain=thought（思想特质）：
+${dimensionSpec(FRAMEWORKS.thought)}
+
+domain=sports（竞技特质）：
+${dimensionSpec(FRAMEWORKS.sports)}
+
+domain=fictional（虚构角色能力）：
+${dimensionSpec(FRAMEWORKS.fictional)}
+
+━━━━━━━━ 要求 ━━━━━━━━
+
+- 在 meta 里增加三个字段：
+  "domain": "选定的域 id",
+  "domainName": "该域的中文名",
+  "domainTagline": "一句话说明该域看什么"
+- traits 数组只包含选定域的维度，code 必须与上面定义一致。
+- 只使用有据可查的公开事实（言行记载、著作、他人评述、重大决策）。信息不足时 sufficiency 打低、维度置 null，不要凭名字气质编造。
+- **文学域**：证据要落到具体作品与句子，不要只说"文风飘逸"。引用或转述具体诗句/段落作为 evidence。
+- **军事域**：证据要落到真实战役、决策与后果，不要泛泛说"有战略眼光"。
+- **虚构角色域**：这是**能力评估**而非人格测量。战斗类维度以原作设定与战绩为准，明确标注出处（如"第 X 话"或"设定集"）。若该角色并非战斗型，把战斗力类维度给 null，并在 unknowns 说明。
+- 历史人物需纳入时代与文化背景，避免用现代标准评判其动机。
 - 额外输出两个字段：
-  "keyEvents": [{"year":"","event":"","significance":"对人格形成或印证的作用"}]
+  "keyEvents": [{"year":"","event":"","significance":"对人格形成或能力体现的作用"}]
   "achievements": [{"domain":"","title":"","description":"反映出的能力或动机倾向"}]
-  keyEvents 重点写**对人格有塑造或印证作用**的事件，不要写成履历表。`;
+  keyEvents 重点写**有塑造或印证作用**的事件，不要写成履历表。`;
 }
 
 function buildPersonalPrompt(
@@ -232,6 +290,10 @@ ${descText || "（无描述）"}
 
 /** 把模型返回的原始对象规整成 AnalysisProfile，容错并补齐缺失字段 */
 function normalizeProfile(raw: any): AnalysisProfile {
+  // 模型选定的评估域；缺失或不认识就回落到人格域
+  const domainId = String(raw?.meta?.domain || "personality");
+  const fw = getFramework(domainId);
+
   const traits: TraitScore[] = Array.isArray(raw?.traits)
     ? raw.traits.map((t: any) => ({
         code: String(t?.code || ""),
@@ -265,6 +327,10 @@ function normalizeProfile(raw: any): AnalysisProfile {
           : 0,
       unknowns: toStringArray(raw?.meta?.unknowns),
       isAnalyzed: true,
+      domain: domainId,
+      domainName: fw.name,
+      domainTagline: fw.tagline,
+      empirical: fw.empirical,
       modelVersion: ANALYSIS_MODEL_VERSION,
       generatedAt: new Date().toISOString(),
     },
@@ -418,16 +484,24 @@ function numOrNull(v: any, min = 0, max = 100): number | null {
 }
 
 /** 分析公众/历史人物 */
-export async function analyzePublicFigure(name: string): Promise<AnalysisProfile> {
-  const raw = await callAI([
-    { role: "system", content: "你是人格心理学研究者。严格按用户给出的 JSON 结构输出，不添加解释文字。" },
-    { role: "user", content: buildPublicFigurePrompt(name) },
-  ]);
+export async function analyzePublicFigure(
+  name: string,
+  config?: AIConfig | null,
+  hint?: string
+): Promise<AnalysisProfile> {
+  const cfg = config ?? envAIConfig();
+  const raw = await callAI(
+    [
+      { role: "system", content: "你是人格心理学研究者。严格按用户给出的 JSON 结构输出，不添加解释文字。" },
+      { role: "user", content: buildPublicFigurePrompt(name, hint) },
+    ],
+    cfg
+  );
 
   const parsed = extractJson(raw);
   if (!parsed) {
-    const reason = isAIConfigured()
-      ? "AI 分析未成功返回结构化结果，请稍后重试。"
+    const reason = cfg
+      ? "AI 分析未成功返回结构化结果，请检查密钥与模型是否可用，或稍后重试。"
       : "未配置 AI 服务，无法生成分析。";
     return emptyAnalysis(reason);
   }
@@ -439,17 +513,22 @@ export async function analyzePerson(
   name: string,
   descriptions: string[],
   relationship?: string,
-  scene?: string
+  scene?: string,
+  config?: AIConfig | null
 ): Promise<AnalysisProfile> {
-  const raw = await callAI([
-    { role: "system", content: "你是人格心理学研究者。严格按用户给出的 JSON 结构输出，不添加解释文字。" },
-    { role: "user", content: buildPersonalPrompt(name, descriptions, relationship, scene) },
-  ]);
+  const cfg = config ?? envAIConfig();
+  const raw = await callAI(
+    [
+      { role: "system", content: "你是人格心理学研究者。严格按用户给出的 JSON 结构输出，不添加解释文字。" },
+      { role: "user", content: buildPersonalPrompt(name, descriptions, relationship, scene) },
+    ],
+    cfg
+  );
 
   const parsed = extractJson(raw);
   if (!parsed) {
-    const reason = isAIConfigured()
-      ? "AI 分析未成功返回结构化结果，请稍后重试。"
+    const reason = cfg
+      ? "AI 分析未成功返回结构化结果，请检查密钥与模型是否可用，或稍后重试。"
       : "未配置 AI 服务，无法生成分析。";
     return emptyAnalysis(reason);
   }
@@ -465,8 +544,10 @@ export async function analyzePerson(
  */
 export async function analyzeSelf(
   entries: Array<{ content: string; timestamp: string }>,
-  existingProfile?: AnalysisProfile | null
+  existingProfile?: AnalysisProfile | null,
+  config?: AIConfig | null
 ): Promise<AnalysisProfile> {
+  const cfg = config ?? envAIConfig();
   const diaryText = entries
     .map((e, i) => `[${i + 1}] ${new Date(e.timestamp).toLocaleDateString("zh-CN")}\n${e.content}`)
     .join("\n\n");
@@ -475,7 +556,8 @@ export async function analyzeSelf(
     ? `\n\n【此前的研判结论（供对照，可能有误，需用新材料检验）】\n${existingProfile.formulation.coreThesis}`
     : "";
 
-  const raw = await callAI([
+  const raw = await callAI(
+    [
     {
       role: "system",
       content:
@@ -498,12 +580,14 @@ ${diaryText || "（无材料）"}${prior}
 - 当材料前后矛盾时，不要强行调和，把矛盾本身写进 formulation.coreConflict。
 - 用户是当事人，guidance 部分应给出 TA 自己可以做的具体调节动作，而不是教 TA 怎么对待别人。`,
     },
-  ]);
+    ],
+    cfg
+  );
 
   const parsed = extractJson(raw);
   if (!parsed) {
-    const reason = isAIConfigured()
-      ? "AI 分析未成功返回结构化结果，请稍后重试。"
+    const reason = cfg
+      ? "AI 分析未成功返回结构化结果，请检查密钥与模型是否可用，或稍后重试。"
       : "未配置 AI 服务，无法生成分析。";
     return emptyAnalysis(reason);
   }
@@ -526,8 +610,10 @@ export interface ReadIntentResult {
 
 export async function readIntent(
   profile: AnalysisProfile,
-  situation: string
+  situation: string,
+  config?: AIConfig | null
 ): Promise<ReadIntentResult | null> {
+  const cfg = config ?? envAIConfig();
   const profileBrief = JSON.stringify({
     traits: profile.traits,
     formulation: profile.formulation,
@@ -566,6 +652,7 @@ export async function readIntent(
 }`,
       },
     ],
+    cfg,
     { temperature: 0.5 }
   );
 
@@ -610,8 +697,10 @@ export async function simulateDialogue(
   profile: AnalysisProfile,
   userName: string,
   history: { role: "user" | "assistant"; content: string }[],
-  mode: "dialogue" | "analysis" = "dialogue"
+  mode: "dialogue" | "analysis" = "dialogue",
+  config?: AIConfig | null
 ): Promise<DialogueResult | null> {
+  const cfg = config ?? envAIConfig();
   const brief = JSON.stringify({
     coreThesis: profile.formulation?.coreThesis,
     coreConflict: profile.formulation?.coreConflict,
@@ -662,6 +751,7 @@ ${historyText}
 }`,
       },
     ],
+    cfg,
     { temperature: mode === "dialogue" ? 0.8 : 0.4, maxTokens: 2500 }
   );
 
@@ -695,8 +785,10 @@ export interface CounterfactualResult {
 export async function runCounterfactual(
   profile: AnalysisProfile,
   originalAction: string,
-  alternativeAction: string
+  alternativeAction: string,
+  config?: AIConfig | null
 ): Promise<CounterfactualResult | null> {
+  const cfg = config ?? envAIConfig();
   const brief = JSON.stringify({
     formulation: profile.formulation,
     relational: profile.relational,
@@ -726,6 +818,7 @@ export async function runCounterfactual(
 }`,
       },
     ],
+    cfg,
     { temperature: 0.6, maxTokens: 2000 }
   );
 
