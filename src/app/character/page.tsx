@@ -699,7 +699,7 @@ function IntentResult({ result }: { result: any }) {
       )}
 
       {(result.doNext?.length > 0 || result.avoid?.length > 0) && (
-        <div className="grid gap-2.5 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-2.5 md:grid-cols-2">
           {result.doNext?.length > 0 && (
             <div className="surface p-4">
               <div className="text-[11px] tracking-[0.16em] uppercase text-jade/80 mb-2.5">

@@ -265,7 +265,7 @@ function PublicForm() {
         <div className="text-[11px] tracking-[0.2em] uppercase text-bone-500 mb-3">
           试试这些
         </div>
-        <div className="grid gap-2 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           {PUBLIC_SUGGESTIONS.map((s) => (
             <button
               key={s.name}
@@ -450,7 +450,7 @@ function FictionalForm() {
         <div className="text-[11px] tracking-[0.2em] uppercase text-bone-500 mb-3">
           试试这些
         </div>
-        <div className="grid gap-2 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           {FICTIONAL_SUGGESTIONS.map((s) => (
             <button
               key={s.name}

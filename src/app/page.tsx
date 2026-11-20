@@ -118,7 +118,7 @@ export default function LibraryPage() {
       </header>
 
       {/* ── 主要入口（始终首屏可见） ── */}
-      <div className="grid gap-3 md:grid-cols-2 mb-8 rise" style={{ animationDelay: "60ms" }}>
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 mb-8 rise" style={{ animationDelay: "60ms" }}>
         <Link
           href="/explore?tab=public"
           className="surface-raised p-5 press group relative overflow-hidden block"
@@ -278,7 +278,7 @@ export default function LibraryPage() {
             </div>
           )}
 
-          <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
             {rest.map((c) => (
               <SmallCard key={c.id} item={c} onDelete={() => handleRemove(c.id, c.name)} />
             ))}
@@ -543,7 +543,7 @@ function LoadingSkeleton() {
   return (
     <div className="shell pt-10 space-y-4">
       <div className="h-8 w-48 rounded-lg bg-[var(--chip-bg)] animate-pulse" />
-      <div className="grid gap-3 md:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         <div className="h-24 rounded-2xl bg-[var(--glass-2)] animate-pulse" />
         <div className="h-24 rounded-2xl bg-[var(--glass-2)] animate-pulse" />
       </div>

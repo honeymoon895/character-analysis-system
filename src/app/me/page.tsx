@@ -229,6 +229,13 @@ export default function MePage() {
           warn={!loading && !s.aiReady}
         />
         <MenuRow
+          href="/me/feedback"
+          icon={<FeedbackIcon />}
+          title="问题反馈"
+          desc="遇到问题或想要新功能"
+          status="微信 xy1984287968"
+        />
+        <MenuRow
           href="/me/account"
           icon={<AccountIcon />}
           title="账号与外观"
@@ -348,6 +355,15 @@ function EngineIcon() {
     </svg>
   );
 }
+function FeedbackIcon() {
+  return (
+    <svg {...ic}>
+      <path d="M4.5 5.5h15v10.5H9.5L5.5 20v-4h-1z" {...st} />
+      <path d="M8.5 9.5h7M8.5 12.5h4.5" {...st} />
+    </svg>
+  );
+}
+
 function AccountIcon() {
   return (
     <svg {...ic}>

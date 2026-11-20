@@ -166,7 +166,7 @@ export default function ChatHomePage() {
           {/* 全部人物 */}
           <section>
             <Label text={`选择人物 · ${characters.length}`} />
-            <div className="grid gap-2 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {characters.map((c, i) => (
                 <Link
                   key={c.id}

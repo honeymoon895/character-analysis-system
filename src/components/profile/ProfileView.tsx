@@ -270,7 +270,7 @@ function Formulation({ profile }: { profile: AnalysisProfile }) {
   return (
     <section>
       <SectionTitle en="Formulation" cn="机制解释" />
-      <div className="grid gap-3 md:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         {f.viciousCycle && (
           <div className="surface p-5">
             <div className="text-[11px] tracking-[0.16em] uppercase text-bone-500 mb-2.5">
@@ -534,7 +534,7 @@ function MotivationSection({ profile }: { profile: AnalysisProfile }) {
       <SectionTitle en="Motivation" cn="驱动结构" hint="TA在追求什么，又在躲避什么" />
       <div className="space-y-3">
         {m.needs.length > 0 && (
-          <div className="grid gap-2.5 md:grid-cols-2">
+          <div className="grid grid-cols-1 gap-2.5 md:grid-cols-2">
             {m.needs.map((n, i) => (
               <div key={i} className="surface p-4">
                 <div className="flex items-center gap-2 mb-2">
@@ -660,7 +660,7 @@ function RegulationSection({ profile }: { profile: AnalysisProfile }) {
           </div>
         )}
 
-        <div className="grid gap-3 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           {r.stressCoping && (
             <div className="surface p-4">
               <div className="text-[11px] tracking-[0.16em] uppercase text-bone-500 mb-2">
@@ -770,7 +770,7 @@ function RelationalSection({ profile }: { profile: AnalysisProfile }) {
           </div>
         )}
 
-        <div className="grid gap-3 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           {rel.underThreat && (
             <div className="surface p-4">
               <div className="text-[11px] tracking-[0.16em] uppercase text-bone-500 mb-2">
@@ -983,7 +983,7 @@ function GuidanceSection({ profile }: { profile: AnalysisProfile }) {
       <SectionTitle en="Guidance" cn="怎么相处" hint="基于机制的建议，不是通用鸡汤" />
 
       {(g.whatTheyWant || g.whatTheyFear) && (
-        <div className="grid gap-3 md:grid-cols-2 mb-3">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 mb-3">
           {g.whatTheyWant && (
             <div className="surface p-4 border-l-2" style={{ borderLeftColor: "rgba(111,168,147,0.5)" }}>
               <div className="text-[11px] tracking-[0.16em] uppercase text-jade/80 mb-2">
@@ -1007,7 +1007,7 @@ function GuidanceSection({ profile }: { profile: AnalysisProfile }) {
         </div>
       )}
 
-      <div className="grid gap-3 md:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         {g.effective.length > 0 && (
           <div className="surface p-4 md:p-5">
             <div className="text-[11px] tracking-[0.16em] uppercase text-jade/80 mb-3">
@@ -1139,7 +1139,7 @@ function MetaFooter({ profile }: { profile: AnalysisProfile }) {
 
   return (
     <section className="pt-6 border-t border-[var(--border-1)]">
-      <div className="grid gap-5 md:grid-cols-2">
+      <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
         {m.sources.length > 0 && (
           <div>
             <div className="text-[11px] tracking-[0.16em] uppercase text-bone-500 mb-2">
