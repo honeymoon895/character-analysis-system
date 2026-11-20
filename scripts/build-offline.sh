@@ -14,7 +14,9 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 API="src/app/api"
-STASH="src/app/__server_api"
+# 必须挪到 src 之外：留在 src 里仍会被类型检查扫到，
+# 而单机构建环境可能没有生成 Prisma 客户端，服务端文件会报类型错误
+STASH=".offline-stash/api"
 
 restore() {
   if [ -d "$STASH" ]; then
@@ -24,8 +26,14 @@ restore() {
 trap restore EXIT
 
 if [ -d "$API" ]; then
+  mkdir -p "$(dirname "$STASH")"
   mv "$API" "$STASH"
 fi
+
+# 服务端工具文件（src/lib/db.ts 等）依赖 Prisma 生成的类型，
+# 干净的 CI 机器上可能没生成过，类型检查会失败。生成不需要连数据库。
+echo "→ 生成 Prisma 客户端类型"
+npx prisma generate >/dev/null
 
 echo "→ 开始静态导出（NEXT_PUBLIC_OFFLINE=1）"
 NEXT_PUBLIC_OFFLINE=1 npx next build

@@ -62,3 +62,4 @@ next-env.d.ts
 # 桌面版构建产物
 /desktop/node_modules
 /desktop/dist
+/.offline-stash
