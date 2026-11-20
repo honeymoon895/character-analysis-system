@@ -100,7 +100,7 @@ export default function ChatHomePage() {
   const recent = sessions.slice(0, 3);
 
   return (
-    <div className="shell pt-6 md:pt-10 pb-10">
+    <div className="shell pt-6 md:pt-10 pb-4 md:pb-10">
       <header className="mb-7 rise">
         <div className="text-[11px] tracking-[0.24em] uppercase text-bone-500 mb-2">
           对话

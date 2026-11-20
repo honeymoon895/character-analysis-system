@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useState, type ReactNode } from "react";
 import { useAuthStore } from "@/store/auth";
 import { useTheme } from "@/components/theme/ThemeProvider";
+import { useVisualViewport } from "@/lib/useVisualViewport";
 
 /**
  * 应用骨架
@@ -204,10 +205,18 @@ function ThemeToggleButton() {
 
 /* ── 移动端底部标签栏 ── */
 function MobileTabBar({ active }: { active: string }) {
+  // 键盘弹出时收起：否则它会跟着被顶到键盘上方，看起来像"导航浮在半空"
+  const { keyboardOpen } = useVisualViewport();
+
   return (
     <nav
-      className="md:hidden fixed bottom-0 left-0 right-0 z-40"
-      style={{ paddingBottom: "var(--safe-bottom)" }}
+      className="md:hidden fixed bottom-0 left-0 right-0 z-40 transition-transform duration-200 ease-out"
+      style={{
+        paddingBottom: "var(--safe-bottom)",
+        transform: keyboardOpen ? "translateY(140%)" : "translateY(0)",
+        pointerEvents: keyboardOpen ? "none" : undefined,
+      }}
+      aria-hidden={keyboardOpen}
     >
       <div
         className="mx-3 mb-2 rounded-[22px] border border-[var(--border-2)] overflow-hidden"

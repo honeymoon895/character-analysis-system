@@ -185,6 +185,8 @@
 
 html {
   background: var(--bg-base);
+  /* 任何一处横向溢出都会让固定定位的底部栏宽于屏幕，必须裁掉 */
+  overflow-x: clip;
 }
 
 body {
@@ -192,6 +194,7 @@ body {
   color: var(--fg-1);
   font-family: var(--font-sans);
   min-height: 100dvh;
+  overflow-x: clip;
   -webkit-font-smoothing: antialiased;
   overscroll-behavior-y: none;
   position: relative;
@@ -251,6 +254,9 @@ body::after {
 #app-root {
   position: relative;
   z-index: 1;
+  /* 与 html/body 同一层保险：布局视口不被撑宽 */
+  overflow-x: clip;
+  max-width: 100%;
 }
 
 .font-display {

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuthStore } from "@/store/auth";
 import { useQueryParam } from "@/lib/useQueryParam";
+import { useVisualViewport } from "@/lib/useVisualViewport";
 import { httpGet, httpPost, httpPatch } from "@/lib/http";
 
 /**
@@ -36,6 +37,8 @@ export default function SimulationPage() {
   const router = useRouter();
   // 静态导出后路径里不能带动态段，改为 ?id= 读取
   const characterId = useQueryParam("id");
+  // 键盘弹出时底部标签栏会收起，容器改用真实可见高度，输入框才不会被盖住
+  const { keyboardOpen, height: viewportHeight } = useVisualViewport();
 
   const [character, setCharacter] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -191,7 +194,12 @@ export default function SimulationPage() {
   return (
     <div
       className="flex flex-col md:h-dvh"
-      style={{ height: "calc(100dvh - 76px - var(--safe-bottom))" }}
+      style={{
+        height:
+          keyboardOpen && viewportHeight
+            ? `${viewportHeight}px`
+            : "calc(100dvh - 76px - var(--safe-bottom))",
+      }}
     >
       {/* ═══ 顶栏 ═══ */}
       <div
