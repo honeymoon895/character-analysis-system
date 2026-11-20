@@ -264,9 +264,30 @@ function PortraitLightbox({
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
 
+    // 安卓返回键：WebView 默认会先去浏览历史，历史空了才退出应用。
+    // 这里压入一条同址记录，用户按返回键时只是退回这一条，
+    // 我们监听到 popstate 就关闭预览，而不是直接退出应用。
+    let pushed = false;
+    try {
+      history.pushState({ __lightbox: true }, "");
+      pushed = true;
+    } catch {}
+
+    const onPop = () => onClose();
+    window.addEventListener("popstate", onPop);
+
     return () => {
       window.removeEventListener("keydown", onKey);
+      window.removeEventListener("popstate", onPop);
       document.body.style.overflow = prev;
+
+      // 若用户是用叉 / 点背景关掉的，把压入的那条记录一并退掉，
+      // 否则下次按返回键会先"回到"这个已经关掉的预览
+      if (pushed && (history.state as any)?.__lightbox) {
+        try {
+          history.back();
+        } catch {}
+      }
     };
   }, [onClose]);
 
@@ -280,12 +301,17 @@ function PortraitLightbox({
       aria-label={`${name} 的画像`}
     >
       <button
-        onClick={onClose}
-        className="absolute top-4 right-4 w-10 h-10 rounded-full flex items-center justify-center text-white/80 hover:text-white press"
-        style={{ background: "rgba(255,255,255,0.12)" }}
+        onClick={(e) => {
+          // 只阻止冒泡到背景，不能放捕获阶段——那样会连自己的 onClick 一起截断
+          e.stopPropagation();
+          onClose();
+        }}
+        className="absolute top-4 right-4 z-10 w-11 h-11 rounded-full flex items-center justify-center text-white/80 hover:text-white press"
+        style={{
+          background: "rgba(255,255,255,0.12)",
+          top: "calc(12px + var(--safe-top))",
+        }}
         aria-label="关闭"
-        // 关闭按钮单独处理，避免和背景点击重复触发
-        onClickCapture={(e) => e.stopPropagation()}
       >
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
           <path d="m6 6 12 12M18 6 6 18" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
