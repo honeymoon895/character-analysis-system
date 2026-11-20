@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { IS_OFFLINE } from "@/lib/offline/flag";
 
 interface User {
   id: number;
@@ -27,6 +28,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ user: null, token: null });
   },
   isAuthenticated: () => {
+    // 单机版没有登录流程，本机账号天然可用
+    if (IS_OFFLINE) return true;
     const token = get().token || localStorage.getItem("token");
     return !!token;
   },

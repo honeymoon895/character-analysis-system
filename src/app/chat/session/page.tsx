@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback, type ReactNode } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuthStore } from "@/store/auth";
+import { useQueryParam } from "@/lib/useQueryParam";
 import { httpGet, httpPost, httpPatch } from "@/lib/http";
 
 /**
@@ -33,7 +34,8 @@ interface ChatMessage {
 export default function SimulationPage() {
   const { isAuthenticated } = useAuthStore();
   const router = useRouter();
-  const params = useParams();
+  // 静态导出后路径里不能带动态段，改为 ?id= 读取
+  const characterId = useQueryParam("id");
 
   const [character, setCharacter] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -51,12 +53,13 @@ export default function SimulationPage() {
   }, [messages, sending]);
 
   const init = useCallback(async () => {
+    if (!characterId) return;
     try {
-      const res = await httpGet(`/api/character/${params.id}`);
+      const res = await httpGet(`/api/character/${characterId}`);
       setCharacter(res.character);
 
       try {
-        const hist = await httpGet(`/api/simulate/history?character_id=${params.id}`);
+        const hist = await httpGet(`/api/simulate/history?character_id=${characterId}`);
         const latest = (hist.sessions || [])[0];
         if (latest) {
           setSessionId(latest.id);
@@ -68,15 +71,15 @@ export default function SimulationPage() {
     } finally {
       setLoading(false);
     }
-  }, [params.id]);
+  }, [characterId]);
 
   useEffect(() => {
     if (!isAuthenticated()) {
       router.push("/login");
       return;
     }
-    init();
-  }, [init]);
+    if (characterId) init();
+  }, [init, characterId]);
 
   const send = useCallback(async () => {
     const text = input.trim();
@@ -214,7 +217,7 @@ export default function SimulationPage() {
 
           {/* 头像与名字都可点击，直接进入完整分析档案 */}
           <Link
-            href={`/character/${character.id}`}
+            href={`/character?id=${character.id}`}
             className="flex items-center gap-2.5 min-w-0 flex-1 press rounded-full -ml-1 pl-1 pr-2 py-1"
             aria-label={`查看 ${character.name} 的完整分析`}
           >

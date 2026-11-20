@@ -10,6 +10,7 @@ import {
   toLegacyValues,
   toLegacyBehaviorPatterns,
 } from "@/lib/analysis/legacy";
+import { buildEntry, normalizeEntries } from "@/lib/knowledge/store";
 
 // GET — 获取自己的性格档案
 export async function GET(request: NextRequest) {
@@ -61,11 +62,8 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const authUser = requireAuth(request);
-    const { content, action } = await request.json();
-
-    if (!content?.trim()) {
-      return NextResponse.json({ error: "请输入内容" }, { status: 400 });
-    }
+    const body = await request.json().catch(() => ({}));
+    const { content, action } = body;
 
     const dbUser = await prisma.user.findUnique({ where: { id: authUser.userId } });
     if (!dbUser) {
@@ -88,23 +86,44 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, message: "已重置" });
     }
 
-    const existingDiary: Array<{ content: string; timestamp: string }> = (() => {
-      try {
-        return JSON.parse(dbUser.selfDiary || "[]");
-      } catch {
-        return [];
-      }
-    })();
-
     const existingProfile: AnalysisProfile | null = safeJson(dbUser.selfAnalysisProfile);
 
-    const newEntry = { content, timestamp: new Date().toISOString() };
-    const updatedDiary = [...existingDiary, newEntry];
+    // 原料统一走知识库结构：旧的 {content, timestamp} 会被自动升级，
+    // 不再另存一套平行数据，避免"日记"和"知识库"两边各写一份。
+    const entries = normalizeEntries(safeJson(dbUser.selfDiary));
+
+    let updatedEntries = entries;
+    let newEntry = null;
+    if (action !== "reanalyze") {
+      const text = typeof content === "string" ? content.trim() : "";
+      if (!text) {
+        return NextResponse.json({ error: "请输入内容" }, { status: 400 });
+      }
+      newEntry = buildEntry({
+        kind: body.kind,
+        title: body.title,
+        content: text,
+        tags: body.tags,
+      });
+      updatedEntries = [...entries, newEntry];
+    }
+
+    if (updatedEntries.length === 0) {
+      return NextResponse.json(
+        { error: "知识库还是空的，先记几条再研判" },
+        { status: 400 }
+      );
+    }
+
+    const analysisInput = updatedEntries.map((e) => ({
+      content: e.title ? `【${e.title}】${e.content}` : e.content,
+      timestamp: e.createdAt,
+    }));
 
     // 用全部材料重新研判，而不是在旧分数上做加权平均——
     // 旧做法会把早期样本的偏差永久固化进档案，且掩盖材料之间的冲突。
     const aiConfig = await loadUserAIConfig(authUser.userId);
-    const profile = await analyzeSelf(updatedDiary, existingProfile, aiConfig);
+    const profile = await analyzeSelf(analysisInput, existingProfile, aiConfig);
 
     const measured = profile.traits.filter(
       (t) => t.score !== null && t.confidence >= 50
@@ -116,7 +135,7 @@ export async function POST(request: NextRequest) {
     await prisma.user.update({
       where: { id: authUser.userId },
       data: {
-        selfDiary: JSON.stringify(updatedDiary),
+        selfDiary: JSON.stringify(updatedEntries),
         selfAnalysisProfile: JSON.stringify(profile),
         selfTraits: JSON.stringify(legacyTraits),
         selfPersonalitySummary: toSummary(profile) || dbUser.selfPersonalitySummary,
@@ -129,7 +148,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       entry: newEntry,
-      diaryCount: updatedDiary.length,
+      diaryCount: updatedEntries.length,
       analysisComplete,
       aiConfigured: Boolean(aiConfig),
       isAnalyzed: profile.meta.isAnalyzed,

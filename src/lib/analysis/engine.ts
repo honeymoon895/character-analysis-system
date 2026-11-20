@@ -33,7 +33,7 @@ export function isAIConfigured(config?: AIConfig | null): boolean {
   return Boolean((config ?? envAIConfig())?.apiKey);
 }
 
-async function callAI(
+export async function callAI(
   messages: Message[],
   config: AIConfig | null,
   opts: { temperature?: number; maxTokens?: number; json?: boolean } = {}

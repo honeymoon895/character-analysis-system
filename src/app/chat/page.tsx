@@ -141,7 +141,7 @@ export default function ChatHomePage() {
                   return (
                     <Link
                       key={s.id}
-                      href={`/chat/${c.id}`}
+                      href={`/chat/session?id=${c.id}`}
                       className="surface p-4 flex items-center gap-3.5 press block hover:border-white/[0.14]"
                     >
                       <Avatar char={c} size={40} />
@@ -170,7 +170,7 @@ export default function ChatHomePage() {
               {characters.map((c, i) => (
                 <Link
                   key={c.id}
-                  href={`/chat/${c.id}`}
+                  href={`/chat/session?id=${c.id}`}
                   className="surface p-4 flex items-center gap-3 press rise hover:border-white/[0.14]"
                   style={{ animationDelay: `${Math.min(i * 35, 300)}ms` }}
                 >

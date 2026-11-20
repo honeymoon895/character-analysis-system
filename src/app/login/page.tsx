@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
+import { IS_OFFLINE } from "@/lib/offline/flag";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { httpPost } from "@/lib/http";
@@ -8,6 +9,11 @@ import { useAuthStore } from "@/store/auth";
 
 export default function LoginPage() {
   const router = useRouter();
+
+  // 单机版没有账号体系，直接进入应用
+  useEffect(() => {
+    if (IS_OFFLINE) router.replace("/");
+  }, []);
   const { setAuth } = useAuthStore();
 
   const [username, setUsername] = useState("");

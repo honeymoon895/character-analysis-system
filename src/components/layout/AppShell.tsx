@@ -36,7 +36,8 @@ const NAV = [
     href: "/me",
     label: "我的",
     icon: MeIcon,
-    match: (p: string) => p.startsWith("/me"),
+    // 模拟人生从「我的」进入，底部高亮也归到「我的」
+    match: (p: string) => p.startsWith("/me") || p.startsWith("/life"),
   },
 ] as const;
 
@@ -392,6 +393,8 @@ function ChatIcon({ active }: IconProps) {
     </svg>
   );
 }
+
+
 
 function MeIcon({ active }: IconProps) {
   return (

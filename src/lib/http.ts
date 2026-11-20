@@ -9,7 +9,23 @@
  * 只有当部署在独立 API 域名下时才需要设置 NEXT_PUBLIC_BASE_URL。
  */
 
+import { IS_OFFLINE } from "@/lib/offline/flag";
+
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "";
+
+/**
+ * 单机模式：不走网络，直接交给本地实现。
+ * 用动态 import 是为了云端构建时不把分析引擎打进首屏包。
+ */
+async function localCall(method: string, url: string, body?: any): Promise<any> {
+  const { localApi } = await import("@/lib/offline/api");
+  try {
+    return await localApi(method, url, body);
+  } catch (e: any) {
+    // 本地实现抛出的错误带 status，对页面来说和服务端报错等价
+    throw new Error(e?.message || "操作失败");
+  }
+}
 
 function authHeaders(extra?: Record<string, string>): Record<string, string> {
   const headers: Record<string, string> = {
@@ -29,6 +45,7 @@ async function parseError(res: Response, fallback: string): Promise<never> {
 }
 
 export async function httpGet<T = any>(url: string): Promise<T> {
+  if (IS_OFFLINE) return localCall("GET", url);
   const res = await fetch(`${BASE_URL}${url}`, {
     headers: authHeaders(),
     cache: "no-store",
@@ -38,6 +55,7 @@ export async function httpGet<T = any>(url: string): Promise<T> {
 }
 
 export async function httpPost<T = any>(url: string, body?: any): Promise<T> {
+  if (IS_OFFLINE) return localCall("POST", url, body);
   const res = await fetch(`${BASE_URL}${url}`, {
     method: "POST",
     headers: authHeaders(),
@@ -55,6 +73,7 @@ export async function httpPost<T = any>(url: string, body?: any): Promise<T> {
 }
 
 export async function httpDelete<T = any>(url: string): Promise<T> {
+  if (IS_OFFLINE) return localCall("DELETE", url);
   const res = await fetch(`${BASE_URL}${url}`, {
     method: "DELETE",
     headers: authHeaders(),
@@ -64,6 +83,7 @@ export async function httpDelete<T = any>(url: string): Promise<T> {
 }
 
 export async function httpPatch<T = any>(url: string, body?: any): Promise<T> {
+  if (IS_OFFLINE) return localCall("PATCH", url, body);
   const res = await fetch(`${BASE_URL}${url}`, {
     method: "PATCH",
     headers: authHeaders(),

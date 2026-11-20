@@ -126,7 +126,7 @@ function ExploreContent() {
       {tab === "public" && <PublicForm />}
       {tab === "fictional" && <FictionalForm />}
       {tab === "personal" && (
-        <PersonalForm onDone={(id) => router.push(`/character/${id}`)} />
+        <PersonalForm onDone={(id) => router.push(`/character?id=${id}`)} />
       )}
     </div>
   );
@@ -190,7 +190,7 @@ function PublicForm() {
         }
 
         if (characterId) {
-          router.push(`/character/${characterId}`);
+          router.push(`/character?id=${characterId}`);
           return;
         }
       }
@@ -358,7 +358,7 @@ function FictionalForm() {
         }
 
         if (characterId) {
-          router.push(`/character/${characterId}`);
+          router.push(`/character?id=${characterId}`);
           return;
         }
       }

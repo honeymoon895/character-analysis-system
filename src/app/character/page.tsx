@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuthStore } from "@/store/auth";
+import { useQueryParam } from "@/lib/useQueryParam";
 import { httpGet, httpPost } from "@/lib/http";
 import type { AnalysisProfile } from "@/lib/analysis/types";
 import {
@@ -36,8 +37,8 @@ type SectionKey = (typeof SECTIONS)[number]["key"];
 export default function CharacterPage() {
   const { isAuthenticated } = useAuthStore();
   const router = useRouter();
-  const params = useParams();
-  const id = params.id as string;
+  // 静态导出后路径里不能带动态段，改为 ?id= 读取
+  const id = useQueryParam("id");
 
   const [character, setCharacter] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -52,10 +53,11 @@ export default function CharacterPage() {
       router.push("/login");
       return;
     }
-    load();
-  }, []);
+    if (id) load();
+  }, [id]);
 
   async function load() {
+    if (!id) return;
     try {
       const res = await httpGet(`/api/character/${id}`);
       setCharacter(res.character);
@@ -785,7 +787,7 @@ function SimulateSection({ character }: { character: any }) {
         <p className="text-[12.5px] text-bone-400 leading-relaxed mb-5">
           以 TA 的思维方式回应你。同时可以展开看这句话背后的心理机制。
         </p>
-        <Link href={`/chat/${character.id}`} className="btn-primary w-full">
+        <Link href={`/chat/session?id=${character.id}`} className="btn-primary w-full">
           进入对话
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
             <path d="M5 12h14m-6-6 6 6-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />

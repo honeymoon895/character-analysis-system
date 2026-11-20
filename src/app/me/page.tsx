@@ -1,44 +1,54 @@
 "use client";
 
-import { useEffect, useRef, useState, type ChangeEvent } from "react";
+import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuthStore } from "@/store/auth";
 import { httpGet, httpPost } from "@/lib/http";
-import type { AnalysisProfile } from "@/lib/analysis/types";
-import { ProfileView } from "@/components/profile/ProfileView";
-import { RadarChart } from "@/components/profile/RadarChart";
-import { AISettingsPanel } from "@/components/settings/AISettingsPanel";
-import { useTheme, type ThemeMode } from "@/components/theme/ThemeProvider";
+import { IS_OFFLINE } from "@/lib/offline/flag";
 
 /**
- * 「我的」——自我认知 + 账号 + 设置
+ * 「我的」—— 入口页
  *
- * 「设置」并入此处而不是单占一个底部入口：
- * 底部栏位置应留给高频动作（人物库 / 新建 / 对话），
- * 设置属于低频但必须找得到的配置，放在个人页最合适。
+ * 只做导航，不放内容：每一项竖排成一行，点进去是独立页面。
+ * 每行右侧带一句实时状态（几条记录、推演到哪、用的什么模型），
+ * 让用户不点进去也知道哪里需要处理。
  */
 
-type Tab = "self" | "account" | "ai";
+interface HubState {
+  characters: number;
+  measured: number;
+  memoryCount: number;
+  coverage: number;
+  sims: number;
+  calibration: number | null;
+  selfDone: boolean;
+  hasProfile: boolean;
+  aiLabel: string;
+  aiReady: boolean;
+}
+
+const EMPTY: HubState = {
+  characters: 0,
+  measured: 0,
+  memoryCount: 0,
+  coverage: 0,
+  sims: 0,
+  calibration: null,
+  selfDone: false,
+  hasProfile: false,
+  aiLabel: "",
+  aiReady: false,
+};
 
 export default function MePage() {
-  const { user, isAuthenticated, logout } = useAuthStore();
+  const { user, isAuthenticated } = useAuthStore();
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const [tab, setTab] = useState<Tab>("self");
-
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
-  const [diary, setDiary] = useState("");
-  const [entries, setEntries] = useState<{ content: string; timestamp: string }[]>([]);
-  const [profile, setProfile] = useState<AnalysisProfile | null>(null);
-  const [traits, setTraits] = useState<any[]>([]);
-  const [complete, setComplete] = useState(false);
-  const [error, setError] = useState("");
-  const [confirmLogout, setConfirmLogout] = useState(false);
-  const [stats, setStats] = useState({ characters: 0, measured: 0 });
+  const [s, setS] = useState<HubState>(EMPTY);
 
   useEffect(() => {
     if (!isAuthenticated()) {
@@ -50,16 +60,17 @@ export default function MePage() {
 
   async function load() {
     try {
-      const [self, list] = await Promise.all([
+      // 各项状态互不依赖，任一失败都不影响其他项显示
+      const [self, list, memory, life, ai] = await Promise.all([
         httpGet<any>("/api/user/self").catch(() => null),
         httpGet<any>("/api/character/list").catch(() => null),
+        httpGet<any>("/api/memory").catch(() => null),
+        httpGet<any>("/api/life").catch(() => null),
+        httpGet<any>("/api/user/ai-settings").catch(() => null),
       ]);
+
       const p = self?.profile || {};
       setAvatarUrl(p.selfAvatarUrl || null);
-      setEntries(p.selfDiary || []);
-      setTraits(p.selfTraits || []);
-      setProfile(p.selfAnalysisProfile || null);
-      setComplete(Boolean(p.selfAnalysisComplete));
 
       const chars = list?.characters || [];
       const measured = chars.filter((c: any) => {
@@ -67,11 +78,30 @@ export default function MePage() {
         try {
           arr = typeof c.traits === "string" ? JSON.parse(c.traits) : c.traits || [];
         } catch {}
-        return arr.some(
-          (t: any) => t.measured !== false && (t.confidence ?? 0) >= 30
-        );
+        return arr.some((t: any) => t.measured !== false && (t.confidence ?? 0) >= 30);
       }).length;
-      setStats({ characters: chars.length, measured });
+
+      const cur = ai?.current || {};
+      const aiReady = Boolean(cur.hasKey || ai?.usingEnv);
+      const providerName =
+        (ai?.providers || []).find((x: any) => x.id === cur.provider)?.name || "";
+
+      setS({
+        characters: chars.length,
+        measured,
+        memoryCount: memory?.entries?.length || 0,
+        coverage: memory?.coverage?.score || 0,
+        sims: life?.sims?.length || 0,
+        calibration: life?.calibration?.score ?? null,
+        selfDone: Boolean(p.selfAnalysisComplete),
+        hasProfile: Boolean(p.selfAnalysisProfile),
+        aiLabel: cur.hasKey
+          ? cur.model || providerName || "已配置"
+          : ai?.usingEnv
+          ? "使用默认服务"
+          : "",
+        aiReady,
+      });
     } finally {
       setLoading(false);
     }
@@ -81,6 +111,22 @@ export default function MePage() {
     const file = e.target.files?.[0];
     if (!file) return;
     try {
+      if (IS_OFFLINE) {
+        // 单机版没有上传接口，直接转成 dataURL 存在本机
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result));
+          reader.onerror = () => reject(new Error("读取图片失败"));
+          reader.readAsDataURL(file);
+        });
+        const data = await httpPost<any>("/api/user/self/upload-avatar", { dataUrl });
+        if (data.avatarUrl) {
+          setAvatarUrl(data.avatarUrl);
+          if (data.user) useAuthStore.getState().setAuth(data.user, "offline");
+        }
+        return;
+      }
+
       const fd = new FormData();
       fd.append("avatar", file);
       const res = await fetch("/api/user/self/upload-avatar", {
@@ -92,9 +138,7 @@ export default function MePage() {
       if (data.avatarUrl) {
         setAvatarUrl(data.avatarUrl);
         if (data.user) {
-          useAuthStore
-            .getState()
-            .setAuth(data.user, localStorage.getItem("token") || "");
+          useAuthStore.getState().setAuth(data.user, localStorage.getItem("token") || "");
         }
       }
     } catch (e: any) {
@@ -102,77 +146,17 @@ export default function MePage() {
     }
   }
 
-  async function submitDiary() {
-    const text = diary.trim();
-    if (!text || saving) return;
-    setError("");
-    setSaving(true);
-    try {
-      await httpPost("/api/user/self", { content: text });
-      setDiary("");
-      await load();
-    } catch (e: any) {
-      setError(e.message || "提交失败");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function exportData() {
-    try {
-      const res = await fetch("/api/user/self/export", {
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem("token") || ""}`,
-        },
-      });
-      if (!res.ok) throw new Error("导出失败");
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `mindscape-${user?.username || "me"}-${new Date()
-        .toISOString()
-        .slice(0, 10)}.json`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    } catch (e: any) {
-      alert(e.message);
-    }
-  }
-
-  async function resetSelf() {
-    if (!confirm("清除全部自我认知记录？不可撤销。")) return;
-    try {
-      await httpPost("/api/user/self", { content: "reset", action: "reset" });
-      setEntries([]);
-      setTraits([]);
-      setProfile(null);
-      setComplete(false);
-    } catch {}
-  }
-
-  if (loading) {
-    return (
-      <div className="shell pt-12">
-        <div className="h-20 rounded-3xl bg-[var(--glass-2)] animate-pulse" />
-      </div>
-    );
-  }
-
-  const measuredTraits = traits.filter(
-    (t: any) => t.measured !== false && (t.confidence ?? 0) >= 30
-  );
-
   return (
     <div className="shell pt-6 md:pt-10 pb-10 max-w-2xl">
       {/* ═══ 身份 ═══ */}
       <header className="flex items-center gap-4 mb-7 rise">
         <button
           onClick={() => fileRef.current?.click()}
-          className="relative w-16 h-16 rounded-[20px] overflow-hidden shrink-0 border border-[var(--border-2)] group"
-          style={{ background: "linear-gradient(150deg, color-mix(in srgb, var(--accent) 14%, var(--bg-base)), var(--bg-base))" }}
+          className="relative w-16 h-16 rounded-[20px] overflow-hidden shrink-0 border border-[var(--border-2)] flex items-center justify-center"
+          style={{
+            background:
+              "linear-gradient(150deg, color-mix(in srgb, var(--accent) 14%, var(--bg-base)), var(--bg-base))",
+          }}
           aria-label="更换头像"
         >
           {avatarUrl ? (
@@ -187,254 +171,188 @@ export default function MePage() {
         <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={uploadAvatar} />
 
         <div className="min-w-0 flex-1">
-          <h1 className="font-display text-[22px] text-bone-50 truncate">
-            {user?.username}
-          </h1>
+          <h1 className="font-display text-[22px] text-bone-50 truncate">{user?.username}</h1>
           <div className="flex items-center gap-2 mt-1.5">
             <span className="chip">
-              <span className="numeral text-bone-100">{stats.characters}</span> 档案
+              <span className="numeral text-bone-100">{s.characters}</span> 档案
             </span>
             <span className="chip">
-              <span className="numeral text-bone-100">{stats.measured}</span> 已研判
+              <span className="numeral text-bone-100">{s.measured}</span> 已研判
             </span>
           </div>
         </div>
       </header>
 
-      {/* ═══ 分段 ═══ */}
-      <div className="flex gap-1 p-1 rounded-2xl border border-[var(--border-1)] bg-[var(--glass-2)] mb-6">
-        {(
-          [
-            ["self", "自我认知"],
-            ["ai", "AI 引擎"],
-            ["account", "账号"],
-          ] as const
-        ).map(([key, label]) => (
-          <button
-            key={key}
-            onClick={() => setTab(key)}
-            className={`flex-1 min-h-[42px] rounded-[13px] text-[13px] font-medium transition-all ${
-              tab === key
-                ? "text-bone-50"
-                : "text-bone-500 hover:text-bone-300"
-            }`}
-            style={
-              tab === key
-                ? {
-                    background:
-                      "linear-gradient(135deg, rgba(94,240,224,0.16), rgba(139,92,246,0.12))",
-                    border: "1px solid rgba(94,240,224,0.2)",
-                  }
-                : undefined
-            }
-          >
-            {label}
-          </button>
-        ))}
+      {/* ═══ 关于我 ═══ */}
+      <Group label="关于我">
+        <MenuRow
+          href="/me/self"
+          icon={<SelfIcon />}
+          title="自我认知"
+          desc="用你的记录做人格研判"
+          status={loading ? "" : s.hasProfile ? (s.selfDone ? "已研判" : "初步结论") : "未研判"}
+          dim={!loading && !s.hasProfile}
+        />
+        <MenuRow
+          href="/me/knowledge"
+          icon={<MemoryIcon />}
+          title="知识库"
+          desc="日记、想法、关系与决定"
+          status={loading ? "" : s.memoryCount ? `${s.memoryCount} 条 · 依据 ${s.coverage}` : "空"}
+          dim={!loading && s.memoryCount === 0}
+        />
+        <MenuRow
+          href="/life"
+          icon={<LifeIcon />}
+          title="模拟人生"
+          desc="推演一个选择之后的几条路"
+          status={
+            loading
+              ? ""
+              : s.sims
+              ? `${s.sims} 次推演${s.calibration !== null ? ` · 校准 ${s.calibration}` : ""}`
+              : "未开始"
+          }
+          dim={!loading && s.sims === 0}
+          last
+        />
+      </Group>
+
+      {/* ═══ 设置 ═══ */}
+      <Group label="设置">
+        <MenuRow
+          href="/me/ai"
+          icon={<EngineIcon />}
+          title="AI 引擎"
+          desc="服务商、密钥与模型"
+          status={loading ? "" : s.aiReady ? s.aiLabel : "未配置"}
+          warn={!loading && !s.aiReady}
+        />
+        <MenuRow
+          href="/me/account"
+          icon={<AccountIcon />}
+          title="账号与外观"
+          desc="主题、账号信息、退出登录"
+          last
+        />
+      </Group>
+    </div>
+  );
+}
+
+/* ── 分组 ── */
+function Group({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <section className="mb-6 rise">
+      <div className="text-[10.5px] tracking-[0.22em] uppercase text-bone-600 px-1 mb-2">
+        {label}
       </div>
-
-      {/* ═══ 自我认知 ═══ */}
-      {tab === "self" && (
-        <div className="rise space-y-5">
-          <div className="surface-raised p-5">
-            <h2 className="font-display text-[17px] text-bone-50 mb-1.5">
-              写点真实的
-            </h2>
-            <p className="text-[12.5px] text-bone-400 leading-relaxed mb-4">
-              写你在什么情境下怎么反应、事后怎么想。越具体，越能看见自己没注意到的模式。
-            </p>
-            <textarea
-              value={diary}
-              onChange={(e) => setDiary(e.target.value)}
-              placeholder="比如：今天开会方案被否，我第一反应是笑着说没关系，回家路上却一直在想是不是自己能力不行。其实我在意的不是方案，是别人怎么看我。"
-              rows={6}
-              className="field mb-3"
-            />
-            {error && <p className="text-[12px] text-rose mb-2">{error}</p>}
-            <button
-              onClick={submitDiary}
-              disabled={!diary.trim() || saving}
-              className="btn-primary w-full"
-            >
-              {saving ? "重新研判中……" : "记录并研判"}
-            </button>
-          </div>
-
-          {profile ? (
-            <div className="space-y-6">
-              {measuredTraits.length >= 3 && (
-                <div className="surface p-4">
-                  <div className="flex items-baseline gap-2 mb-3">
-                    <h2 className="font-display text-[16px] text-bone-50">自我轮廓</h2>
-                    <span className="text-[10px] uppercase tracking-[0.2em] text-bone-600">
-                      Shape
-                    </span>
-                  </div>
-                  <RadarChart data={measuredTraits} />
-                </div>
-              )}
-              <ProfileView profile={profile} />
-            </div>
-          ) : (
-            entries.length > 0 && (
-              <p className="text-[12px] text-bone-500 text-center">
-                记录已保存，等待研判
-              </p>
-            )
-          )}
-
-          {entries.length > 0 && (
-            <div>
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-[11px] tracking-[0.2em] uppercase text-bone-500">
-                  {entries.length} 条记录
-                </span>
-                <div className="flex gap-2">
-                  <button onClick={exportData} className="text-[11.5px] text-bone-400 hover:text-bone-100 px-2 py-1">
-                    导出
-                  </button>
-                  <button onClick={resetSelf} className="text-[11.5px] text-bone-600 hover:text-rose px-2 py-1">
-                    清空
-                  </button>
-                </div>
-              </div>
-              <div className="space-y-2">
-                {[...entries].reverse().map((e, i) => (
-                  <div key={i} className="surface p-4">
-                    <div className="text-[10px] text-bone-600 mb-1.5">
-                      {new Date(e.timestamp).toLocaleDateString("zh-CN")}
-                    </div>
-                    <p className="text-[13px] text-bone-200 leading-[1.75] whitespace-pre-wrap">
-                      {e.content}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ═══ AI 引擎 ═══ */}
-      {tab === "ai" && (
-        <div className="rise">
-          <AISettingsPanel />
-        </div>
-      )}
-
-      {/* ═══ 账号 ═══ */}
-      {tab === "account" && (
-        <div className="rise space-y-3">
-          {/* 外观：主题切换 */}
-          <div className="surface p-5">
-            <div className="flex items-center justify-between gap-3 mb-1">
-              <div>
-                <div className="text-[14px] text-bone-50">外观</div>
-                <p className="text-[11.5px] text-bone-500 mt-0.5">
-                  白天用浅色，夜里用深色
-                </p>
-              </div>
-              <ThemeSwitch />
-            </div>
-          </div>
-
-          <div className="surface p-5">
-            <Row label="用户名" value={user?.username || "—"} />
-            <div className="h-px bg-white/[0.06] my-3" />
-            <Row label="邮箱" value={user?.email || "未设置"} />
-          </div>
-
-          <Link
-            href="/explore"
-            className="surface p-4 flex items-center gap-3 press block"
-          >
-            <span className="text-[14px] text-bone-100 flex-1">新建研判</span>
-            <Chevron />
-          </Link>
-
-          <div className="surface p-5">
-            <div className="text-[11px] tracking-[0.16em] uppercase text-bone-500 mb-2">
-              隐私
-            </div>
-            <p className="text-[12.5px] text-bone-400 leading-[1.8]">
-              所有档案只保存在你的账号下，其他用户无法访问。AI 密钥仅存在服务端，
-              不会下发到浏览器。
-            </p>
-          </div>
-
-          {!confirmLogout ? (
-            <button
-              onClick={() => setConfirmLogout(true)}
-              className="btn-ghost w-full text-rose"
-            >
-              退出登录
-            </button>
-          ) : (
-            <div className="surface p-4">
-              <p className="text-[13px] text-bone-200 mb-3">确定退出？</p>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => {
-                    logout();
-                    router.push("/login");
-                  }}
-                  className="btn-primary flex-1"
-                >
-                  退出
-                </button>
-                <button
-                  onClick={() => setConfirmLogout(false)}
-                  className="btn-ghost flex-1"
-                >
-                  取消
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
+      <div className="surface overflow-hidden">{children}</div>
+    </section>
   );
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+/* ── 一行菜单 ── */
+function MenuRow({
+  href,
+  icon,
+  title,
+  desc,
+  status,
+  dim,
+  warn,
+  last,
+}: {
+  href: string;
+  icon: ReactNode;
+  title: string;
+  desc: string;
+  status?: string;
+  dim?: boolean;
+  warn?: boolean;
+  last?: boolean;
+}) {
   return (
-    <div className="flex items-center justify-between">
-      <span className="text-[13px] text-bone-400">{label}</span>
-      <span className="text-[13px] text-bone-100">{value}</span>
-    </div>
-  );
-}
-
-/** 三档切换：跟随系统 / 浅色 / 深色 */
-function ThemeSwitch() {
-  const { mode, setMode } = useTheme();
-  const OPTIONS: { key: ThemeMode; label: string }[] = [
-    { key: "system", label: "自动" },
-    { key: "light", label: "浅色" },
-    { key: "dark", label: "深色" },
-  ];
-
-  return (
-    <div className="theme-switch" role="group" aria-label="外观主题">
-      {OPTIONS.map((o) => (
-        <button
-          key={o.key}
-          data-on={mode === o.key}
-          onClick={() => setMode(o.key)}
-          aria-pressed={mode === o.key}
+    <Link
+      href={href}
+      className="relative flex items-center gap-3.5 px-4 py-3.5 min-h-[64px] press hover:bg-[var(--chip-bg)] transition-colors"
+    >
+      <span
+        className="w-10 h-10 rounded-[13px] flex items-center justify-center shrink-0"
+        style={{
+          background:
+            "linear-gradient(140deg, color-mix(in srgb, var(--accent) 16%, transparent), color-mix(in srgb, var(--accent-2) 12%, transparent))",
+          border: "1px solid var(--border-1)",
+          color: "var(--accent)",
+        }}
+      >
+        {icon}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-[14.5px] text-bone-50">{title}</span>
+        <span className="block text-[11.5px] text-bone-500 mt-0.5 truncate">{desc}</span>
+      </span>
+      {status !== undefined && status !== "" && (
+        <span
+          className={`text-[11.5px] shrink-0 max-w-[42%] truncate ${
+            warn ? "text-rose" : dim ? "text-bone-600" : "text-bone-300"
+          }`}
         >
-          {o.label}
-        </button>
-      ))}
-    </div>
+          {status}
+        </span>
+      )}
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" className="text-bone-600 shrink-0">
+        <path d="m9 6 6 6-6 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+      {!last && (
+        <span className="absolute bottom-0 left-[70px] right-0 h-px bg-[var(--hairline)]" />
+      )}
+    </Link>
   );
 }
 
-function Chevron() {
+/* ── 图标 ── */
+const ic = { width: 19, height: 19, viewBox: "0 0 24 24", fill: "none" } as const;
+const st = { stroke: "currentColor", strokeWidth: 1.6, strokeLinecap: "round", strokeLinejoin: "round" } as const;
+
+function SelfIcon() {
   return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" className="text-bone-600">
-      <path d="m9 6 6 6-6 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    <svg {...ic}>
+      <circle cx="12" cy="8.5" r="3.6" {...st} />
+      <path d="M5 20c.8-3.6 3.6-5.6 7-5.6s6.2 2 7 5.6" {...st} />
+    </svg>
+  );
+}
+function MemoryIcon() {
+  return (
+    <svg {...ic}>
+      <path d="M5 4.5h10.5L19 8v11.5H5z" {...st} />
+      <path d="M8.5 11h7M8.5 14.5h7M8.5 7.5h4" {...st} />
+    </svg>
+  );
+}
+function LifeIcon() {
+  return (
+    <svg {...ic}>
+      <path d="M6 3.5v6a3 3 0 0 0 3 3h6a3 3 0 0 1 3 3v5" {...st} />
+      <path d="M6 12.5v8" {...st} opacity="0.5" />
+      <circle cx="6" cy="3.5" r="1.3" {...st} />
+    </svg>
+  );
+}
+function EngineIcon() {
+  return (
+    <svg {...ic}>
+      <rect x="6" y="6" width="12" height="12" rx="2.5" {...st} />
+      <path d="M9.5 2.8v3.2M14.5 2.8v3.2M9.5 18v3.2M14.5 18v3.2M2.8 9.5h3.2M2.8 14.5h3.2M18 9.5h3.2M18 14.5h3.2" {...st} />
+    </svg>
+  );
+}
+function AccountIcon() {
+  return (
+    <svg {...ic}>
+      <circle cx="12" cy="12" r="3" {...st} />
+      <path d="M19.4 13.5a7.6 7.6 0 0 0 0-3l2-1.5-2-3.4-2.4.9a7.5 7.5 0 0 0-2.6-1.5L14 2.5h-4l-.4 2.5a7.5 7.5 0 0 0-2.6 1.5l-2.4-.9-2 3.4 2 1.5a7.6 7.6 0 0 0 0 3l-2 1.5 2 3.4 2.4-.9c.8.7 1.6 1.2 2.6 1.5l.4 2.5h4l.4-2.5c1-.3 1.8-.8 2.6-1.5l2.4.9 2-3.4z" {...st} />
     </svg>
   );
 }

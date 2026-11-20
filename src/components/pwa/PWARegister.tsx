@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
+import { IS_OFFLINE } from "@/lib/offline/flag";
 
 /**
  * PWA 注册与安装提示
@@ -15,6 +16,8 @@ import { usePathname } from "next/navigation";
 export function PWARegister() {
   useEffect(() => {
     if (typeof window === "undefined") return;
+    // 单机版本身就装成了 App，WebView 里注册 Service Worker 没有意义
+    if (IS_OFFLINE) return;
     if (!("serviceWorker" in navigator)) return;
     if (process.env.NODE_ENV !== "production") {
       // 开发环境不注册，避免缓存干扰热更新

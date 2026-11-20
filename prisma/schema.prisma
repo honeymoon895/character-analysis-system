@@ -43,6 +43,7 @@ model User {
   characters        Character[]
   simulationSessions SimulationSession[]
   feedbacks         UserFeedback[]
+  lifeSims          LifeSim[]
 
   @@map("users")
 }
@@ -193,4 +194,25 @@ model UserFeedback {
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("user_feedbacks")
+}
+
+/// 模拟人生：一次推演 = 一条时间线上的一串决策节点
+/// nodes 存 JSON 数组（LifeNode[]），包含处境、分支、概率与回填的校准结果
+model LifeSim {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  title     String
+  premise   String
+  focus     String   @default("综合")
+  horizon   String   @default("1年")
+  status    String   @default("active")
+  nodes     String   @default("[]")
+  coverage  Int      @default(0)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, updatedAt])
+  @@map("life_sims")
 }

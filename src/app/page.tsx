@@ -327,7 +327,7 @@ function RecentCard({
   return (
     <div className="relative rise group" style={{ animationDelay: `${delay}ms` }}>
       <Link
-        href={`/character/${item.id}`}
+        href={`/character?id=${item.id}`}
         className="surface p-4 md:p-5 press block hover:border-white/[0.12] transition-colors"
       >
         <div className="flex items-start gap-3.5">
@@ -402,7 +402,7 @@ function SmallCard({
   return (
     <div className="relative group">
       <Link
-        href={`/character/${item.id}`}
+        href={`/character?id=${item.id}`}
         className="surface p-4 press block h-full hover:border-white/[0.12] transition-colors"
       >
         <div className="flex items-start gap-3">
