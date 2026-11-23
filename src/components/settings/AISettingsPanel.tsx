@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type CSSProperties } from "react";
 import { httpGet, httpPost } from "@/lib/http";
+import { cleanSecret, readClipboard } from "@/lib/clipboard";
 
 /**
  * AI 引擎设置
@@ -275,13 +276,10 @@ export function AISettingsPanel() {
             <label className="block text-[11.5px] text-bone-400 mb-2">
               API Key
             </label>
-            <input
-              type="password"
+            <KeyInput
               value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
+              onChange={setApiKey}
               placeholder={current?.hasKey ? "重新填写以覆盖" : "sk-..."}
-              className="field"
-              autoComplete="off"
             />
             {selected.consoleUrl && (
               <a
@@ -444,6 +442,84 @@ export function AISettingsPanel() {
       <p className="text-[11px] text-bone-600 leading-relaxed text-center">
         密钥只保存在服务端，不会下发到浏览器。连接测试会真实调用一次接口。
       </p>
+    </div>
+  );
+}
+
+/**
+ * 密钥输入框
+ *
+ * 不用 type="password"：安卓上多数输入法（搜狗、百度、Gboard）遇到密码框会切到
+ * 安全键盘，禁用剪贴板，长按也不出现粘贴——用户只能一个字符一个字符地敲。
+ * 这里用普通文本框 + CSS 圆点遮挡，输入法照常提供粘贴；另加一个显式的「粘贴」按钮。
+ */
+function KeyInput({
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder: string;
+}) {
+  const [visible, setVisible] = useState(false);
+  const [hint, setHint] = useState("");
+
+  async function paste() {
+    setHint("");
+    const text = await readClipboard();
+    if (text === null) {
+      setHint("无法读取剪贴板，请长按输入框选择「粘贴」");
+      return;
+    }
+    const cleaned = cleanSecret(text);
+    if (!cleaned) {
+      setHint("剪贴板是空的");
+      return;
+    }
+    onChange(cleaned);
+    setHint(`已粘贴（${cleaned.length} 位）`);
+  }
+
+  return (
+    <div>
+      <div className="flex gap-2">
+        <input
+          type="text"
+          value={value}
+          onChange={(e) => onChange(cleanSecret(e.target.value))}
+          placeholder={placeholder}
+          className="field flex-1 min-w-0 font-mono"
+          style={
+            visible
+              ? undefined
+              : ({ WebkitTextSecurity: value ? "disc" : "none" } as CSSProperties)
+          }
+          autoComplete="off"
+          autoCapitalize="off"
+          autoCorrect="off"
+          spellCheck={false}
+          inputMode="text"
+          data-lpignore="true"
+        />
+        <button
+          type="button"
+          onClick={paste}
+          className="btn-ghost shrink-0 px-3.5 text-[12.5px]"
+        >
+          粘贴
+        </button>
+        <button
+          type="button"
+          onClick={() => setVisible((v) => !v)}
+          className="btn-ghost shrink-0 px-3 text-[12.5px]"
+          aria-label={visible ? "隐藏密钥" : "显示密钥"}
+          aria-pressed={visible}
+        >
+          {visible ? "隐藏" : "显示"}
+        </button>
+      </div>
+      {hint && <p className="text-[11px] text-bone-500 mt-1.5">{hint}</p>}
     </div>
   );
 }
